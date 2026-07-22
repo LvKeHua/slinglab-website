@@ -1,0 +1,17 @@
+name = "tokenomics-screener"
+main = "src/worker.js"
+compatibility_date = "2025-04-01"
+
+workers_dev = true
+
+kv_namespaces = [
+  { binding = "MARKET_DATA", id = "TO_BE_REPLACED" }
+]
+
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Secrets (set via `wrangler secret put`):
+#   CMC_API_KEY      - CoinMarketCap Pro API 密钥
+#   COINGECKO_API_KEY - CoinGecko API 密钥 (可选)
+#   UPLOAD_AUTH_KEY   - 上传接口认证密钥
