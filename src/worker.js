@@ -50,17 +50,40 @@ function crossValidateRatio(cmcRatio, cgRatio) {
 }
 
 async function refreshData() {
-  const [bybitResult, cmcResult, cgResult] = await Promise.allSettled([
+  const [binanceResult, bybitResult, okxResult, cmcResult, cgResult] = await Promise.allSettled([
+    fetchBinanceData(),
     fetchBybitData(),
+    fetchOKXData(),
     fetchCmcData(),
     fetchCoinGeckoData(),
   ]);
+  if (binanceResult.status === 'rejected') console.error('Binance failed:', binanceResult.reason);
   if (bybitResult.status === 'rejected') console.error('Bybit failed:', bybitResult.reason);
+  if (okxResult.status === 'rejected') console.error('OKX failed:', okxResult.reason);
   if (cmcResult.status === 'rejected') console.error('CMC failed:', cmcResult.reason);
   if (cgResult.status === 'rejected') console.error('CoinGecko failed:', cgResult.reason);
+  const binanceRows = binanceResult.status === 'fulfilled' ? binanceResult.value : null;
   const bybitRows = bybitResult.status === 'fulfilled' ? bybitResult.value : null;
+  const okxRows = okxResult.status === 'fulfilled' ? okxResult.value : null;
   const cmcMap = cmcResult.status === 'fulfilled' ? cmcResult.value : null;
   const cgMap = cgResult.status === 'fulfilled' ? cgResult.value : null;
+
+  // Combine all exchange rows, deduplicate by symbol (keep highest 24h volume)
+  const exchangeRows = [];
+  {
+    const seen = {};
+    for (const rows of [binanceRows, bybitRows, okxRows]) {
+      if (!rows) continue;
+      for (const row of rows) {
+        const sym = row.symbol;
+        if (!seen[sym] || (row.volume_24h_usdt || 0) > (seen[sym].volume_24h_usdt || 0)) {
+          seen[sym] = row;
+        }
+      }
+    }
+    for (const sym of Object.keys(seen)) exchangeRows.push(seen[sym]);
+    console.log(`Exchange tickers: ${exchangeRows.length} unique (Binance:${binanceRows ? binanceRows.length : 0}, Bybit:${bybitRows ? bybitRows.length : 0}, OKX:${okxRows ? okxRows.length : 0})`);
+  }
   function applyValidation(coin, cgKeyOrSymbol) {
     if (!cgMap) return coin;
     const cg = cgMap[cgKeyOrSymbol] || matchMarketKey(coin.base_asset, coin.symbol, cgMap);
@@ -78,9 +101,9 @@ async function refreshData() {
     }
     return coin;
   }
-  if (bybitRows && bybitRows.length > 0 && cmcMap) {
+  if (exchangeRows.length > 0 && cmcMap) {
     const merged = [];
-    for (const row of bybitRows) {
+    for (const row of exchangeRows) {
       const ba = (row.base_asset || '').toUpperCase();
       const cmc = matchMarketKey(ba, row.symbol, cmcMap);
       const mcap = cmc ? cmc.market_cap : null;
@@ -114,8 +137,8 @@ async function refreshData() {
       return;
     }
   }
-  if (bybitRows && bybitRows.length > 0) {
-    const coins = bybitRows.map(row => ({ symbol: row.symbol, name: (row.base_asset || '').toUpperCase(), base_asset: row.base_asset, price: row.price, market_cap: null, circulating_supply: null, total_supply: null, max_supply: null, circulating_ratio: null, cmc_rank: null, volume_24h_usdt: row.volume_24h_usdt, percent_change_7d: null, change_24h_pct: row.change_24h_pct, amplitude_24h_pct: row.amplitude_24h_pct, star_rating: 0, unlock_risk: unlockLabel(null), momentum_alert: false }));
+  if (exchangeRows.length > 0) {
+    const coins = exchangeRows.map(row => ({ symbol: row.symbol, name: (row.base_asset || '').toUpperCase(), base_asset: row.base_asset, price: row.price, market_cap: null, circulating_supply: null, total_supply: null, max_supply: null, circulating_ratio: null, cmc_rank: null, volume_24h_usdt: row.volume_24h_usdt, percent_change_7d: null, change_24h_pct: row.change_24h_pct, amplitude_24h_pct: row.amplitude_24h_pct, star_rating: 0, unlock_risk: unlockLabel(null), momentum_alert: false }));
     await MARKET_DATA.put('data', JSON.stringify(coins));
     await MARKET_DATA.put('last_updated', new Date().toISOString());
     await MARKET_DATA.put('count', String(coins.length));
@@ -146,6 +169,52 @@ async function fetchBybitData() {
       const pcnt = parseFloat(t.price24hPcnt || '0') * 100;
       if (isNaN(price) || price <= 0) continue;
       rows.push({ symbol: sym, base_asset: sym.replace('USDT', ''), price, change_24h_pct: Math.round(pcnt * 100) / 100, amplitude_24h_pct: Math.round(((high - low) / price) * 100 * 100) / 100, volume_24h_usdt: parseFloat(t.turnover24h || '0') });
+    }
+    return rows;
+  } finally { clearTimeout(timeout); }
+}
+
+async function fetchBinanceData() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch('https://fapi.binance.com/fapi/v1/ticker/24hr', { signal: controller.signal });
+    if (!res.ok) throw new Error('Binance: ' + res.status);
+    const data = await res.json();
+    const rows = [];
+    for (const t of data) {
+      if (!t.symbol.endsWith('USDT')) continue;
+      const price = parseFloat(t.lastPrice);
+      const high = parseFloat(t.highPrice);
+      const low = parseFloat(t.lowPrice);
+      if (isNaN(price) || price <= 0) continue;
+      const vol = parseFloat(t.quoteVolume || '0');
+      const chg = parseFloat(t.priceChangePercent || '0');
+      rows.push({ symbol: t.symbol, base_asset: t.symbol.replace('USDT', ''), price, change_24h_pct: Math.round(chg * 100) / 100, amplitude_24h_pct: high && low && high > 0 && low > 0 ? Math.round(((high - low) / price) * 100 * 100) / 100 : 0, volume_24h_usdt: vol });
+    }
+    return rows;
+  } finally { clearTimeout(timeout); }
+}
+
+async function fetchOKXData() {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch('https://www.okx.com/api/v5/market/tickers?instType=SWAP', { signal: controller.signal });
+    if (!res.ok) throw new Error('OKX: ' + res.status);
+    const data = await res.json();
+    if (!data.data) return [];
+    const rows = [];
+    for (const t of data.data) {
+      if (!t.instId.endsWith('-USDT-SWAP')) continue;
+      const price = parseFloat(t.last);
+      const high = parseFloat(t.high24h);
+      const low = parseFloat(t.low24h);
+      if (isNaN(price) || price <= 0) continue;
+      const ba = t.instId.replace('-USDT-SWAP', '');
+      const vol = parseFloat(t.volCcy24h || '0');
+      const chg = parseFloat(t.change24h || '0') * 100;
+      rows.push({ symbol: ba + 'USDT', base_asset: ba, price, change_24h_pct: Math.round(chg * 100) / 100, amplitude_24h_pct: high && low && high > 0 && low > 0 ? Math.round(((high - low) / price) * 100 * 100) / 100 : 0, volume_24h_usdt: vol });
     }
     return rows;
   } finally { clearTimeout(timeout); }
