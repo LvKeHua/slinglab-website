@@ -1879,7 +1879,7 @@ function renderCoinfilter(container) {
 // 数据: GET /api/screener（服务端合并 forward + coinfilter + data，计算环境闸门/排除层/告警）
 // 规则: 硬门槛五要素(下行保护 dn10 3.3%) + 强度分(叙事+1) + 事件回避(-3, fwd5 -1.7%)
 // ═══════════════════════════════════════════════════════════
-var scData = [], scLoaded = false, scTag = '', scSort = 'forward_score', scAsc = false;
+var scData = [], scLoaded = false, scTag = '', scSort = 'forward_score', scAsc = false, scAppearTotal = 0;
 // OI 范围自定义（客户端过滤，默认不设限 = 全市场，逻辑不变）
 var scOiMin = null, scOiMax = null;
 
@@ -2184,6 +2184,7 @@ function scLoad() {
     if (d.error && !rows.length) throw new Error(d.error);
     scData = rows;
     scEnv = d.env || null;
+    scAppearTotal = d.appear_total || 0;
     scLoaded = true;
     renderScreener();
   }).catch(function (err) {
@@ -2283,7 +2284,7 @@ function renderScreener() {
   H += '<button class="btn btn-sm" onclick="scClearOiRange()">清除</button>';
   H += '<span class="dim" id="sc-oi-status">' + (scOiMin != null || scOiMax != null ? '🔍 已过滤 OI ' + (scOiMin != null ? (scOiMin/1e6) : '0') + 'M ~ ' + (scOiMax != null ? (scOiMax/1e6) : '∞') + 'M' : '未过滤（全市场）') + '</span>';
   H += '</div>';
-  H += '<div class="fwd-stats">🧭候选 ' + nAcc + ' · ⛔回避 ' + nAvoid + ' · 🔔告警 ' + nAlert + ' · ⚠️薄盘口 ' + nThin + '</div>';
+  H += '<div class="fwd-stats">🧭候选 ' + nAcc + ' · ⛔回避 ' + nAvoid + ' · 🔔告警 ' + nAlert + ' · ⚠️薄盘口 ' + nThin + (scAppearTotal > 0 ? ' · 📊 7天出现 ' + scAppearTotal + ' 次' : '') + '</div>';
 
   if (!rows.length) {
     H += '<div class="empty-msg">没有符合条件的币。</div>';
@@ -2300,6 +2301,7 @@ function renderScreener() {
     H += '<th class="sortable" onclick="scSortBy(\'range_20d\')">横盘20d</th>';
     H += '<th class="sortable" onclick="scSortBy(\'vol_shrink_20d\')">缩量</th>';
     H += '<th class="sortable" onclick="scSortBy(\'forward_score\')">评分</th>';
+    H += '<th class="sortable" onclick="scSortBy(\'appear_count\')">出现次数</th>';
     H += '<th>信号</th><th>告警</th>';
     H += '</tr></thead><tbody>';
     rows.slice(0, 300).forEach(function (r) {
@@ -2317,6 +2319,7 @@ function renderScreener() {
       H += '<td class="mono">' + (r.range_20d != null ? (r.range_20d * 100).toFixed(0) + '%' : '—') + '</td>';
       H += '<td class="mono">' + (r.vol_shrink_20d != null ? (r.vol_shrink_20d * 100).toFixed(0) + '%' : '—') + '</td>';
       H += '<td class="mono score">' + (r.forward_score != null ? r.forward_score : '—') + '</td>';
+      H += '<td class="mono" style="' + (r.appear_count >= 10 ? 'color:#fbbf24;font-weight:800' : (r.appear_count >= 5 ? 'color:#f59e0b;font-weight:700' : 'color:#94a3b8')) + '">' + (r.appear_count > 0 ? r.appear_count + '次' : '—') + '</td>';
       H += '<td>' + scSigTag(r) + '</td>';
       H += '<td>' + scAlertHtml(r) + '</td>';
       H += '</tr>';

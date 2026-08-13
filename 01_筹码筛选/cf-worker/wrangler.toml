@@ -8,10 +8,10 @@ compatibility_date = "2024-01-01"
 binding = "MARKET_DATA"
 id = "6d56b8307fd04814892f9c2b15723c02"
 
-# 定时刷新行情/市值数据（每15分钟，与 relay 推送对齐；tickers 由 relay 5 分钟循环推送）
-# 降频原因：KV 免费配额 1000 writes/day，5 分钟频率下 refreshData 3 writes/次会超限
+# 定时刷新行情/市值数据（每60分钟；tickers 由 relay 5 分钟循环推送）
+# 降频原因：KV 免费配额 1000 writes/day，5 分钟 tickers + 归档 + 出现次数统计已占满
 [triggers]
-crons = ["*/15 * * * *"]
+crons = ["0 * * * *"]
 
 [[routes]]
 pattern = "app.slinglab.xyz/screener/*"

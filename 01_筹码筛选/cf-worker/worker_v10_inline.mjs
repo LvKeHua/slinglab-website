@@ -1880,7 +1880,7 @@ function renderCoinfilter(container) {
 // 数据: GET /api/screener（服务端合并 forward + coinfilter + data，计算环境闸门/排除层/告警）
 // 规则: 硬门槛五要素(下行保护 dn10 3.3%) + 强度分(叙事+1) + 事件回避(-3, fwd5 -1.7%)
 // ═══════════════════════════════════════════════════════════
-var scData = [], scLoaded = false, scTag = '', scSort = 'forward_score', scAsc = false;
+var scData = [], scLoaded = false, scTag = '', scSort = 'forward_score', scAsc = false, scAppearTotal = 0;
 // OI 范围自定义（客户端过滤，默认不设限 = 全市场，逻辑不变）
 var scOiMin = null, scOiMax = null;
 
@@ -2185,6 +2185,7 @@ function scLoad() {
     if (d.error && !rows.length) throw new Error(d.error);
     scData = rows;
     scEnv = d.env || null;
+    scAppearTotal = d.appear_total || 0;
     scLoaded = true;
     renderScreener();
   }).catch(function (err) {
@@ -2284,7 +2285,7 @@ function renderScreener() {
   H += '<button class="btn btn-sm" onclick="scClearOiRange()">清除</button>';
   H += '<span class="dim" id="sc-oi-status">' + (scOiMin != null || scOiMax != null ? '🔍 已过滤 OI ' + (scOiMin != null ? (scOiMin/1e6) : '0') + 'M ~ ' + (scOiMax != null ? (scOiMax/1e6) : '∞') + 'M' : '未过滤（全市场）') + '</span>';
   H += '</div>';
-  H += '<div class="fwd-stats">🧭候选 ' + nAcc + ' · ⛔回避 ' + nAvoid + ' · 🔔告警 ' + nAlert + ' · ⚠️薄盘口 ' + nThin + '</div>';
+  H += '<div class="fwd-stats">🧭候选 ' + nAcc + ' · ⛔回避 ' + nAvoid + ' · 🔔告警 ' + nAlert + ' · ⚠️薄盘口 ' + nThin + (scAppearTotal > 0 ? ' · 📊 7天出现 ' + scAppearTotal + ' 次' : '') + '</div>';
 
   if (!rows.length) {
     H += '<div class="empty-msg">没有符合条件的币。</div>';
@@ -2301,6 +2302,7 @@ function renderScreener() {
     H += '<th class="sortable" onclick="scSortBy(\\'range_20d\\')">横盘20d</th>';
     H += '<th class="sortable" onclick="scSortBy(\\'vol_shrink_20d\\')">缩量</th>';
     H += '<th class="sortable" onclick="scSortBy(\\'forward_score\\')">评分</th>';
+    H += '<th class="sortable" onclick="scSortBy(\\'appear_count\\')">出现次数</th>';
     H += '<th>信号</th><th>告警</th>';
     H += '</tr></thead><tbody>';
     rows.slice(0, 300).forEach(function (r) {
@@ -2318,6 +2320,7 @@ function renderScreener() {
       H += '<td class="mono">' + (r.range_20d != null ? (r.range_20d * 100).toFixed(0) + '%' : '—') + '</td>';
       H += '<td class="mono">' + (r.vol_shrink_20d != null ? (r.vol_shrink_20d * 100).toFixed(0) + '%' : '—') + '</td>';
       H += '<td class="mono score">' + (r.forward_score != null ? r.forward_score : '—') + '</td>';
+      H += '<td class="mono" style="' + (r.appear_count >= 10 ? 'color:#fbbf24;font-weight:800' : (r.appear_count >= 5 ? 'color:#f59e0b;font-weight:700' : 'color:#94a3b8')) + '">' + (r.appear_count > 0 ? r.appear_count + '次' : '—') + '</td>';
       H += '<td>' + scSigTag(r) + '</td>';
       H += '<td>' + scAlertHtml(r) + '</td>';
       H += '</tr>';
@@ -2476,6 +2479,27 @@ async function hRWF(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Ke
     hist.updated = n;
     await kv.put(dayKey, JSON.stringify(hist));
   }catch(e){console.log('fwd_hist archive error:', e.message)}
+  // 📊 出现次数统计：每次 relay-forward 推送时，对候选池币计数（appear_count KV，滚动 7 天）
+  try{
+    const bj = new Date(new Date(n).getTime() + 8*3600*1000); const day = bj.toISOString().slice(0,10);
+    const acKey = 'appear_count';
+    const prev = await kv.get(acKey);
+    let ac = prev ? JSON.parse(prev) : {days:{},updated:n};
+    if(!ac.days) ac.days = {};
+    if(!ac.days[day]) ac.days[day] = {};
+    const dayMap = ac.days[day];
+    for(const c of b.data){
+      if(c.signal!=='acc_candidate') continue;
+      const ba = c.base_asset || (c.symbol||'').replace('USDT','');
+      if(!ba) continue;
+      dayMap[ba] = (dayMap[ba]||0) + 1;
+    }
+    // 滚动清理 7 天前的数据
+    const cutoff = new Date(Date.parse(day) - 7*86400000).toISOString().slice(0,10);
+    for(const d of Object.keys(ac.days)){ if(d < cutoff) delete ac.days[d]; }
+    ac.updated = n;
+    await kv.put(acKey, JSON.stringify(ac));
+  }catch(e){console.log('appear_count error:', e.message)}
   return json({ok:true,coins:b.data.length,updated:n})}catch(e){return json({ok:false,error:e.message},400)}}
 async function hFH(kv,url){const days=Math.min(parseInt(new URL(url).searchParams.get('days')||'7',10)||7,60);const out={};const now=new Date();for(let i=0;i<days;i++){const bj=new Date(now.getTime()+8*3600*1000-i*86400000);const ds=bj.toISOString().slice(0,10);const r=await kv.get('fwd_hist_'+ds.replace(/-/g,''));if(r){try{const p=JSON.parse(r);out[ds]={candidates:p.candidates||[],updated:p.updated||null,count:(p.candidates||[]).length,seed:p.seed||false}}catch(e){}}}return json({ok:true,days,tz:'UTC+8',history:out})}
 // 🎯 重合统计：每日候选池 ∩ 当日涨幅榜（前N名，成交额≥minvol）
@@ -2615,7 +2639,10 @@ async function hML(kv){const r=await kv.get('mentioned_list');if(!r)return json(
 // 数据源: forward(吸筹结构/评分) + coinfilter(OI/资费/盘口/信号) + data(市值)
 // 规则: 硬门槛五要素(下行保护验证 dn10 3.3%) + 强度分(叙事因子+1) + 事件回避(-3, fwd5 -1.7% 强验证)
 async function hSC(kv){
-  const [dr,cr,fr]=await Promise.all([kv.get('data'),kv.get('coinfilter_data'),kv.get('forward_data')]);
+  const [dr,cr,fr,ar]=await Promise.all([kv.get('data'),kv.get('coinfilter_data'),kv.get('forward_data'),kv.get('appear_count')]);
+  // 出现次数统计：appear_count KV（滚动 7 天，按天计数）
+  const appear={};let appearTotal=0;
+  if(ar){try{const p=JSON.parse(ar);if(p.days){for(const d of Object.keys(p.days)){for(const ba of Object.keys(p.days[d])){appear[ba]=(appear[ba]||0)+p.days[d][ba];appearTotal+=p.days[d][ba];}}}}catch(e){}}
   const base={};if(dr){try{const p=JSON.parse(dr);(Array.isArray(p)?p:p.data||[]).forEach(c=>{if(c.base_asset)base[c.base_asset]={market_cap:c.market_cap,volume_24h_usdt:c.volume_24h_usdt,cmc_rank:c.cmc_rank,circulating_ratio:c.circulating_ratio,unlock_risk:c.unlock_risk}})}catch(e){}}
   const cf={};if(cr){try{const p=JSON.parse(cr);(Array.isArray(p)?p:p.data||[]).forEach(c=>{if(c.base_asset)cf[c.base_asset]=c})}catch(e){}}
   const fw={};if(fr){try{const p=JSON.parse(fr);(Array.isArray(p)?p:p.data||[]).forEach(c=>{if(c.base_asset)fw[c.base_asset]=c})}catch(e){}}
@@ -2661,10 +2688,11 @@ async function hSC(kv){
       spring_test:!!f.spring_test,breakout_consolidation:!!f.breakout_consolidation,
       oi_24h_change_pct:c.oi_24h_change_pct!=null?c.oi_24h_change_pct:null,
       thin_book:thinBook,distribution,kill_longs:killLongs,event_day:eventDay,neg_fund_pump:negFundPump,
+      appear_count:appear[sym]||0,
       alerts
     });
   }
-  return json({ok:true,updated:new Date().toISOString(),count:rows.length,env:env,data:rows});
+  return json({ok:true,updated:new Date().toISOString(),count:rows.length,env:env,appear_total:appearTotal,data:rows});
 }
 async function hST(kv){const r=await kv.get('data'),u=await kv.get('last_updated'),c=await kv.get('count'),dr=await kv.get('demon_data'),cr=await kv.get('coinfilter_data'),fw=await kv.get('forward_data');let dc=0,du=null,cc=0,cu=null;if(dr){try{const dp=JSON.parse(dr);dc=dp.count||(Array.isArray(dp)?dp.length:0);du=dp.updated||null}catch(e){}}if(cr){try{const cp=JSON.parse(cr);cc=cp.count||(Array.isArray(cp)?cp.length:0);cu=cp.updated||null}catch(e){}}const ml=await kv.get('mentioned_list');let mentioned=[];if(ml){try{mentioned=JSON.parse(ml)}catch(e){}}return json({project:'筹码筛选',ok:!!r,coins:parseInt(c||'0'),updated:u,demon:{ok:!!dr,coins:parseInt(dc||'0'),updated:du},coinfilter:{ok:!!cr,coins:parseInt(cc||'0'),updated:cu},forward:{ok:!!fw,coins:fw?(()=>{try{return JSON.parse(fw).count||0}catch(e){return 0}})():0,updated:fw?(()=>{try{return JSON.parse(fw).updated||null}catch(e){return null}})():null},mentioned:mentioned})}
 async function hDD(kv){const eps=[{n:'BN',u:'https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT'},{n:'BN spot',u:'https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT'},{n:'BB',u:'https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT'},{n:'OKX',u:'https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT-SWAP'}];const r={};for(const ep of eps){const c=new AbortController,t=setTimeout(()=>c.abort(),1e4);try{const res=await fetch(ep.u,{signal:c.signal});clearTimeout(t);const txt=await res.text().catch(()=>'');r[ep.n]={s:res.status,p:txt.slice(0,100)}}catch(e){clearTimeout(t);r[ep.n]={e:e.message}}}await kv.put('debug_exchange',JSON.stringify(r)).catch(()=>{});return json(r)}
