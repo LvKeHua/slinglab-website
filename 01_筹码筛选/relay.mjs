@@ -770,86 +770,120 @@ function aggregateMarket(binanceRows, bybitRows, okxRows, okxOiMap) {
   return { vol, oi, price };
 }
 
-async function main() {
-  const results = await Promise.allSettled([
-    fetchBinance(),
-    fetchBybit(),
-    fetchOkx(),
-  ]);
-
-  const payload = {};
-  const labels = ['binance', 'bybit', 'okx'];
-  let total = 0;
-
-  for (let i = 0; i < results.length; i++) {
-    const r = results[i];
-    const name = labels[i];
-    if (r.status === 'fulfilled' && r.value.length > 0) {
-      payload[name] = r.value;
-      total += r.value.length;
-      if (process.env.DEBUG) console.log(`${name}: ${r.value.length} tickers`);
-    } else {
-      if (process.env.DEBUG) console.log(`${name}: FAILED 鈥?${r.reason?.message || 'no data'}`);
-    }
-  }
-
-  const sourceCount = Object.keys(payload).length;
-  if (sourceCount === 0) {
-    console.error('FATAL: All exchange fetches failed. Nothing to relay.');
-    process.exit(1);
-  }
-
-  if (!AUTH_KEY) {
-    console.error('FATAL: RELAY_AUTH_KEY not set.');
-    process.exit(1);
-  }
-
-  console.log(`Relaying ${total} tickers from ${sourceCount} source(s): ${Object.keys(payload).join(', ')}`);
-
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
+// 重模块节流：demon/coinfilter 每 30 分钟一次（KV 配额 1000 writes/day 约束）
+// 用本地文件记录上次运行时间（relay 每次 cron 是独立进程）
+import fs from 'node:fs';
+const HEAVY_MARKER = '/opt/screener/.heavy_last';
+async function isHeavyDue() {
   try {
-    const resp = await fetch(WORKER_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Auth-Key': AUTH_KEY,
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    });
+    const last = parseInt(fs.readFileSync(HEAVY_MARKER, 'utf-8'), 10);
+    if (Date.now() - last < 30 * 60 * 1000) return false;
+  } catch (e) { /* 无标记 → 首次运行 */ }
+  try { fs.writeFileSync(HEAVY_MARKER, String(Date.now())); } catch (e) {}
+  return true;
+}
 
-    const result = await resp.json();
-    if (resp.ok && result.ok) {
-      console.log(`Relay OK: ${result.sources} 鈥?updated ${result.updated}`);
-    } else {
-      console.error(`Relay error (HTTP ${resp.status}):`, JSON.stringify(result));
-      // KV 限额等写入失败不阻断 demon/coinfilter 管道
+async function main() {
+  // 每 15 分钟 cron 触发一次，内部循环 3 轮（间隔 5 分钟）：
+  //   每轮：抓 tickers → 推 relay-tickers（涨幅榜归档 5 分钟更新）
+  //   第一轮额外：demon/coinfilter/forward（重计算，保持 15 分钟频率，避免 Binance 限流）
+  const ROUNDS = 3;
+  const ROUND_INTERVAL_MS = 5 * 60 * 1000;
+  for (let round = 0; round < ROUNDS; round++) {
+    if (round > 0) {
+      console.log(`Round ${round + 1}/${ROUNDS}: waiting ${ROUND_INTERVAL_MS / 60000}min...`);
+      await new Promise(r => setTimeout(r, ROUND_INTERVAL_MS));
     }
-  } catch (e) {
-    console.error('Tickers relay failed:', e.message);
-  } finally { clearTimeout(timer); }
+    console.log(`===== Round ${round + 1}/${ROUNDS} =====`);
+    const results = await Promise.allSettled([
+      fetchBinance(),
+      fetchBybit(),
+      fetchOkx(),
+    ]);
 
-  // 全市场聚合：OI = Binance(一次全量) + Bybit(ticker自带) + OKX(全量接口)
-  const okxOiMap = await fetchOkxOi().catch(() => new Map());
-  const agg = aggregateMarket(payload.binance, payload.bybit, payload.okx, okxOiMap);
-  // Binance OI 只抓一次，三个模块复用（避免 3×679 请求触发限流卡死）
-  const oiMap = await fetchOpenInterest(payload.binance.map(r => r.symbol)).catch(() => new Map());
-  console.log(`Main: fetched OI=${oiMap.size} (shared across demon/coinfilter/forward)`);
+    const payload = {};
+    const labels = ['binance', 'bybit', 'okx'];
+    let total = 0;
 
-  // 妖币扫描数据（基于本次 Binance ticker + 全市场聚合）
-  if (payload.binance) {
-    await relayDemon(payload.binance, agg, oiMap).catch(e => console.error('Demon relay failed:', e.message));
-  }
+    for (let i = 0; i < results.length; i++) {
+      const r = results[i];
+      const name = labels[i];
+      if (r.status === 'fulfilled' && r.value.length > 0) {
+        payload[name] = r.value;
+        total += r.value.length;
+        if (process.env.DEBUG) console.log(`${name}: ${r.value.length} tickers`);
+      } else {
+        if (process.env.DEBUG) console.log(`${name}: FAILED ${r.reason?.message || 'no data'}`);
+      }
+    }
 
-  // 小币筛选数据（基于本次 Binance ticker）
-  if (payload.binance) {
-    await relayCoinfilter(payload.binance, oiMap, null, null, null, agg).catch(e => console.error('Coinfilter relay failed:', e.message));
-  }
+    const sourceCount = Object.keys(payload).length;
+    if (sourceCount === 0) {
+      console.error('FATAL: All exchange fetches failed. Nothing to relay.');
+      process.exit(1);
+    }
 
-  // 前导筛选数据（基于本次 Binance ticker）
-  if (payload.binance) {
-    await relayForward(payload.binance, process.env.DEBUG, agg, oiMap).catch(e => console.error('Forward relay failed:', e.message));
+    if (!AUTH_KEY) {
+      console.error('FATAL: RELAY_AUTH_KEY not set.');
+      process.exit(1);
+    }
+
+    console.log(`Relaying ${total} tickers from ${sourceCount} source(s): ${Object.keys(payload).join(', ')}`);
+
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 30000);
+    try {
+      const resp = await fetch(WORKER_URL, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'X-Auth-Key': AUTH_KEY,
+        },
+        body: JSON.stringify(payload),
+        signal: controller.signal,
+      });
+
+      const result = await resp.json();
+      if (resp.ok && result.ok) {
+        console.log(`Relay OK: ${result.sources} — updated ${result.updated}`);
+      } else {
+        console.error(`Relay error (HTTP ${resp.status}):`, JSON.stringify(result));
+        // KV 限额等写入失败不阻断 demon/coinfilter 管道
+      }
+    } catch (e) {
+      console.error('Tickers relay failed:', e.message);
+    } finally { clearTimeout(timer); }
+
+    // 重计算模块节流：demon/coinfilter 每 30 分钟（KV 配额 1000 writes/day 约束），
+    // forward 每 15 分钟（候选池归档核心）；tickers 每轮 5 分钟
+    if (round === 0) {
+      const heavyDue = await isHeavyDue();
+      if (heavyDue) {
+        // 全市场聚合：OI = Binance(一次全量) + Bybit(ticker自带) + OKX(全量接口)
+        const okxOiMap = await fetchOkxOi().catch(() => new Map());
+        const agg = aggregateMarket(payload.binance, payload.bybit, payload.okx, okxOiMap);
+        // Binance OI 只抓一次，三个模块复用（避免 3×679 请求触发限流卡死）
+        const oiMap = await fetchOpenInterest(payload.binance.map(r => r.symbol)).catch(() => new Map());
+        console.log(`Main: fetched OI=${oiMap.size} (shared across demon/coinfilter/forward)`);
+
+        // 妖币扫描数据（基于本次 Binance ticker + 全市场聚合）
+        if (payload.binance) {
+          await relayDemon(payload.binance, agg, oiMap).catch(e => console.error('Demon relay failed:', e.message));
+        }
+
+        // 小币筛选数据（基于本次 Binance ticker）
+        if (payload.binance) {
+          await relayCoinfilter(payload.binance, oiMap, null, null, null, agg).catch(e => console.error('Coinfilter relay failed:', e.message));
+        }
+      } else {
+        console.log('Heavy modules (demon/coinfilter) throttled: last run < 30min ago');
+      }
+
+      // 前导筛选数据（基于本次 Binance ticker）— 每 15 分钟
+      if (payload.binance) {
+        await relayForward(payload.binance, process.env.DEBUG, null, null).catch(e => console.error('Forward relay failed:', e.message));
+      }
+    }
   }
 }
 
