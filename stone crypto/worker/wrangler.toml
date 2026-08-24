@@ -1,0 +1,28 @@
+name = "stone-journal"
+main = "src/index.ts"
+compatibility_date = "2026-07-01"
+
+# KV namespace for caching, static files, and settings
+kv_namespaces = [
+  { binding = "STONE_DATA", id = "b1746befa9394cfeada28d3787f36f9c" }
+]
+
+# Scheduled cache warming every 5 minutes
+[triggers]
+crons = ["*/5 * * * *"]
+
+[[routes]]
+pattern = "app.slinglab.xyz/stone"
+zone_name = "slinglab.xyz"
+
+[[routes]]
+pattern = "app.slinglab.xyz/stone/*"
+zone_name = "slinglab.xyz"
+
+# Environment variables
+[vars]
+BINANCE_PROXY_URL = "https://binance.slinglab.xyz/proxy"
+
+# Secrets are configured via `wrangler secret put <NAME>` (they persist across
+# deploys). Required: BINANCE_PROXY_SECRET, STONE_ENC_KEY, DEPLOY_KEY
+

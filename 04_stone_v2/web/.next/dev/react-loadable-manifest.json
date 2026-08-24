@@ -1,0 +1,14 @@
+{
+  "..\\..\\node_modules\\next\\dist\\client\\dev\\hot-reloader\\app\\web-socket.js -> @vercel/turbopack-ecmascript-runtime/browser/dev/hmr-client/hmr-client.ts": {
+    "id": "..\\..\\node_modules\\next\\dist\\client\\dev\\hot-reloader\\app\\web-socket.js -> @vercel/turbopack-ecmascript-runtime/browser/dev/hmr-client/hmr-client.ts",
+    "files": [
+      "static/chunks/_app-pages-browser_node_modules_next_dist_client_dev_noop-turbopack-hmr_js.js"
+    ]
+  },
+  "app\\client-page.tsx -> @/components/dashboard/dashboard-client": {
+    "id": "app\\client-page.tsx -> @/components/dashboard/dashboard-client",
+    "files": [
+      "static/chunks/_app-pages-browser_src_components_dashboard_dashboard-client_tsx.js"
+    ]
+  }
+}

@@ -1,0 +1,21 @@
+name = "slinglab-homepage"
+main = "src/index.js"
+compatibility_date = "2026-07-22"
+
+# SITE_DATA: homepage_html content (TOKENOMICS_MARKET_DATA namespace)
+# STONE_DATA: shared auth state (site_auth / reset_token) with stone-journal
+kv_namespaces = [
+  { binding = "SITE_DATA", id = "6d56b8307fd04814892f9c2b15723c02" },
+  { binding = "STONE_DATA", id = "b1746befa9394cfeada28d3787f36f9c" }
+]
+
+[[routes]]
+pattern = "app.slinglab.xyz/*"
+zone_name = "slinglab.xyz"
+
+# Secrets (set via `wrangler secret put`, same values as stone-journal):
+#   SITE_PASSWORD    - site login password
+#   STONE_ENC_KEY    - encryption key for stored secrets
+#   RECOVERY_EMAIL   - email address that receives password-reset links
+#   EMAIL_API_KEY    - Resend API key (optional until configured)
+#   EMAIL_FROM       - sender address for reset emails (optional)

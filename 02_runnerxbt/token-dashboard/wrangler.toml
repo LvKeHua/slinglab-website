@@ -1,0 +1,20 @@
+name = "tokenomics-screener"
+main = "src/worker.js"
+compatibility_date = "2025-04-01"
+
+# Bybit + CMC + CoinGecko data
+workers_dev = true
+
+# KV namespace for market data cache
+kv_namespaces = [
+  { binding = "MARKET_DATA", id = "6d56b8307fd04814892f9c2b15723c02" }
+]
+
+# Cron: refresh every 5 minutes
+[triggers]
+crons = ["*/5 * * * *"]
+
+# Secrets (set via `wrangler secret put`):
+#   CMC_API_KEY      - CoinMarketCap Pro API 密钥
+#   COINGECKO_API_KEY - CoinGecko API 密钥 (可选)
+#   UPLOAD_AUTH_KEY   - 上传接口认证密钥

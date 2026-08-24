@@ -1,0 +1,17 @@
+{
+  "name": "@stone/exchange",
+  "version": "2.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    "./balances": "./src/balances.ts",
+    "./positions": "./src/positions.ts",
+    "./trades": "./src/trades.ts",
+    "./pairing": "./src/pairing.ts",
+    "./market": "./src/market.ts",
+    "./crossex": "./src/crossex.ts"
+  },
+  "dependencies": {
+    "zod": "^4.1.12"
+  }
+}

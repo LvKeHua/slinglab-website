@@ -1,0 +1,12 @@
+{
+  "name": "stone-local-proxy",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "start": "node server.js"
+  },
+  "dependencies": {
+    "https-proxy-agent": "^9.1.0",
+    "node-fetch": "^2.7.0"
+  }
+}

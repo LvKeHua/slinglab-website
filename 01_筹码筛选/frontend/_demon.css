@@ -1,0 +1,49 @@
+/* ═══ 妖币扫描器 视图样式 ═══ */
+#tabbar{display:flex;gap:8px;margin-bottom:14px}
+.tab-btn{flex:1;max-width:220px;padding:11px 16px;border:1px solid var(--border);border-radius:var(--radius);background:var(--surface);color:var(--text-secondary);font-size:.85rem;font-weight:600;cursor:pointer;transition:var(--transition);letter-spacing:.5px}
+.tab-btn:hover{border-color:var(--border-active);color:var(--text)}
+.tab-btn.active{background:linear-gradient(135deg,rgba(59,130,246,0.18),rgba(16,185,129,0.08));border-color:var(--border-active);color:var(--text);box-shadow:0 0 16px var(--accent-glow)}
+.demon-preset-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.demon-preset{flex:1;min-width:88px;padding:9px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-secondary);font-size:.72rem;font-weight:600;cursor:pointer;transition:var(--transition)}
+.demon-preset:hover{border-color:var(--border-active);color:var(--text)}
+.demon-preset.active{background:linear-gradient(135deg,rgba(239,68,68,0.18),rgba(245,158,11,0.12));border-color:rgba(239,68,68,0.4);color:#fca5a5;box-shadow:0 0 12px rgba(239,68,68,0.15)}
+.demon-filter-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+.demon-filter-card .label{font-size:.62rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.demon-filter-card .input-row{display:flex;gap:8px;align-items:center;margin-bottom:4px}
+.demon-filter-card .filter-input{flex:1;padding:6px 8px;border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);font-size:.8rem;width:0;min-width:0;text-align:center;background:var(--surface-alt);color:var(--text);transition:var(--transition);font-variant-numeric:tabular-nums}
+.demon-filter-card .filter-input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-glow)}
+.demon-filter-card .range-sep{color:var(--text-muted);font-size:.8rem;flex-shrink:0}
+.demon-filter-card input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,0.1);outline:none;margin:8px 0;transition:var(--transition)}
+.demon-filter-card input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);cursor:pointer;box-shadow:0 0 8px var(--accent-glow)}
+.demon-filter-card input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:var(--accent);border:2px solid var(--surface);cursor:pointer}
+.demon-sort-row{display:flex;gap:8px;margin-top:4px}
+.demon-sort-row select{flex:1;padding:6px 8px;border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);font-size:.75rem;background:var(--surface-alt);color:var(--text)}
+.sig-badge{display:inline-block;font-size:.58rem;font-weight:600;padding:2px 6px;border-radius:4px;margin:1px 2px;white-space:nowrap}
+.sig-squeeze{background:rgba(239,68,68,0.18);color:#fca5a5;border:1px solid rgba(239,68,68,0.3)}
+.sig-pump{background:rgba(16,185,129,0.16);color:#34d399;border:1px solid rgba(16,185,129,0.3)}
+.sig-dump{background:rgba(245,158,11,0.16);color:#fbbf24;border:1px solid rgba(245,158,11,0.3)}
+.sig-tag{background:rgba(139,92,246,0.16);color:#c4b5fd;border:1px solid rgba(139,92,246,0.3)}
+.sig-lowoi{background:rgba(59,130,246,0.14);color:#93c5fd;border:1px solid rgba(59,130,246,0.3)}
+.sig-higoi{background:rgba(239,68,68,0.24);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
+tr.squeeze-row td{color:#fca5a5!important}
+tr.squeeze-row td:first-child{position:relative}
+tr.squeeze-row td:first-child::before{content:'';position:absolute;left:0;top:4px;bottom:4px;width:3px;background:linear-gradient(180deg,#ef4444,#b91c1c);border-radius:2px}
+.demon-chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px}
+.demon-chart-wrap h4{font-size:.8rem;font-weight:600;color:var(--text);margin-bottom:10px}
+.hbar-row{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:.66rem}
+.hbar-label{width:52px;text-align:right;color:var(--text-secondary);flex-shrink:0;font-variant-numeric:tabular-nums}
+.hbar-track{flex:1;height:12px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden}
+.hbar-fill{height:100%;background:linear-gradient(90deg,#ef4444,#f59e0b);border-radius:3px;min-width:2px}
+.hbar-val{width:56px;color:var(--text-muted);flex-shrink:0;font-variant-numeric:tabular-nums}
+.hist-wrap{display:flex;align-items:flex-end;gap:4px;height:110px;padding-top:4px}
+.hist-bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+.hist-fill{background:linear-gradient(180deg,#3b82f6,#1d4ed8);border-radius:3px 3px 0 0;min-height:2px;transition:height .3s}
+.hist-fill.neg{background:linear-gradient(180deg,#f59e0b,#d97706)}
+.hist-label{font-size:.55rem;color:var(--text-muted);text-align:center;margin-top:4px;white-space:nowrap}
+.scatter-wrap{position:relative;height:240px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:var(--radius-sm);overflow:hidden}
+.scatter-dot{position:absolute;border-radius:50%;opacity:.85;cursor:help;transition:transform .15s}
+.scatter-dot:hover{transform:scale(1.6);opacity:1;z-index:5}
+.scatter-axis{position:absolute;font-size:.55rem;color:var(--text-muted)}
+.scatter-x{left:8px;bottom:6px}
+.scatter-y{top:6px;right:8px}
+.demon-note{font-size:.62rem;color:var(--text-muted);margin-top:8px;line-height:1.6}

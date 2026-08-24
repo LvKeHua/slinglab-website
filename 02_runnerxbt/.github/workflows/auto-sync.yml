@@ -1,0 +1,73 @@
+name: RunnerXBT Auto Sync
+
+on:
+  schedule:
+    - cron: '*/10 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: runnerxbt-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install telethon requests pynacl
+
+      - name: Restore Telegram session
+        env:
+          TG_SESSION_B64: ${{ secrets.TG_SESSION_B64 }}
+        run: |
+          echo "$TG_SESSION_B64" | base64 -d > scraper/tg_session.session
+          ls -la scraper/tg_session.session
+
+      - name: Sync Telegram messages
+        run: python -u scraper/sync_telegram.py 2>&1 | tail -20
+
+      - name: Sync K-lines from OKX
+        run: python -u scraper/sync_klines_okx.py 2>&1 | tail -10
+
+      - name: Merge messages
+        run: python -u merge_messages.py
+
+      - name: Build self-contained HTML
+        run: python -u build_v2.py 2>&1 | tail -10
+
+      - name: Inject frontend features
+        run: |
+          python -u inject_v2.py 2>&1 | tail -3
+          python -u inject_ux2.py 2>&1 | tail -3
+          python -u inject_ux3.py 2>&1 | tail -3
+          python -u inject_ux4.py 2>&1 | tail -3
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ secrets.CF_API_TOKEN }}
+        run: npx --yes wrangler@4 pages deploy deploy_v2 --project-name runnerxbt --branch main --commit-dirty=true 2>&1 | tail -6
+
+      - name: Push back synced data
+        run: |
+          git config user.name "RunnerXBT Sync"
+          git config user.email "sync@runnerxbt.local"
+          git add data/messages_telethon.json data/messages_final.json data/btc_ohlcv_1d.json data/eth_ohlcv_1d.json data/btc_ohlcv_4h.json data/media/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No data changes"
+          else
+            git commit -m "sync: update data $(date -u +%Y-%m-%dT%H:%M)"
+            git push origin HEAD:master
+          fi

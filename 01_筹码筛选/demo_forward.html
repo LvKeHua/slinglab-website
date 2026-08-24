@@ -1,0 +1,177 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧭 前导筛选器 Demo</title>
+<style>
+:root{--bg:#0b0e14;--card:#12161f;--line:#1e2532;--txt:#dbe2ee;--dim:#7c8798;--up:#34d399;--down:#f87171;--acc:#38bdf8;--warn:#fbbf24;--danger:#ef4444;--radius:10px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.5;padding:16px}
+h1{font-size:18px;margin-bottom:4px}
+.sub{color:var(--dim);font-size:12px;margin-bottom:14px}
+.env{padding:12px 14px;border-radius:var(--radius);font-size:13px;margin-bottom:12px}
+.env-bull{background:rgba(16,185,129,.12);border:1px solid rgba(16,185,129,.45);color:#34d399}
+.env-bear{background:rgba(239,68,68,.12);border:1px solid rgba(239,68,68,.45);color:#f87171}
+.env-na{background:rgba(148,163,184,.1);border:1px solid rgba(148,163,184,.4);color:#94a3b8}
+.bar{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin-bottom:10px}
+.btn{background:#1a2130;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px}
+.btn:hover{border-color:#3b4a63}
+.btn-active{background:#1e3a5f;border-color:var(--acc);color:#7dd3fc}
+.dim{color:var(--dim);font-size:12px}
+.stats{color:var(--dim);font-size:12px;margin-bottom:10px}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius)}
+table{width:100%;border-collapse:collapse;white-space:nowrap}
+th{background:#141a26;color:var(--dim);font-weight:600;text-align:left;padding:8px 10px;font-size:12px;cursor:pointer;user-select:none;position:sticky;top:0}
+th:hover{color:var(--txt)}
+td{padding:7px 10px;border-top:1px solid var(--line);font-size:12px}
+tr:hover td{background:#161d2b}
+.mono{font-family:ui-monospace,Consolas,monospace}
+.up{color:var(--up)}.down{color:var(--down)}
+.score{font-weight:700;color:#7dd3fc}
+.fwd-acc td{background:rgba(56,189,248,.05)}
+.fwd-avoid td{background:rgba(239,68,68,.06)}
+.tag{display:inline-block;padding:1px 6px;border-radius:5px;font-size:11px;margin-right:4px;border:1px solid}
+.tag-acc{color:#7dd3fc;border-color:#38bdf8;background:rgba(56,189,248,.1)}
+.tag-danger{color:#fca5a5;border-color:#ef4444;background:rgba(239,68,68,.1)}
+.tag-watch{color:#fcd34d;border-color:#fbbf24;background:rgba(251,191,36,.1)}
+.tag-noise{color:#64748b;border-color:#334155}
+.tag-low{color:#6ee7b7;border-color:#10b981;background:rgba(16,185,129,.08)}
+.tag-new{color:#c4b5fd;border-color:#8b5cf6;background:rgba(139,92,246,.08)}
+.tag-fund{color:#f9a8d4;border-color:#ec4899;background:rgba(236,72,153,.08)}
+.empty-msg{color:var(--dim);padding:30px;text-align:center}
+.foot{color:var(--dim);font-size:11px;margin-top:12px;line-height:1.7}
+.btn-sm{padding:2px 8px;font-size:11px}
+</style>
+</head>
+<body>
+<h1>🧭 前导筛选器 Demo</h1>
+<div class="sub">数据：backtest_binance_30d.json 快照（530 币 × 100 天日线 + 31 天 OI + 资费）· 评分逻辑与 relay.mjs 一致 · BTC 仅作环境对照，不参与筛选</div>
+<div id="env"></div>
+<div class="bar" id="bar"></div>
+<div class="stats" id="stats"></div>
+<div class="table-wrap" id="tbl"></div>
+<div class="foot" id="foot"></div>
+
+<script>
+var DATA = [], ENV = null, fTag = '', fMinScore = 0, fSort = 'forward_score', fAsc = false;
+
+function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function fP(v){ if(v == null) return '—'; if(v >= 1000) return v.toLocaleString(undefined,{maximumFractionDigits:0}); if(v >= 1) return v.toFixed(4); return v.toPrecision(4); }
+function fC(v){ if(v == null) return '—'; return (v > 0 ? '+' : '') + v.toFixed(2) + '%'; }
+
+function watchKey(){ return 'fwd_demo_watchlist'; }
+function getWatch(){ try { return JSON.parse(localStorage.getItem(watchKey()) || '{}'); } catch(e){ return {}; } }
+function toggleWatch(sym){
+  var w = getWatch();
+  if (w[sym]) delete w[sym]; else w[sym] = Date.now();
+  try { localStorage.setItem(watchKey(), JSON.stringify(w)); } catch(e){}
+  render();
+}
+
+function filtered(){
+  var rows = DATA.slice();
+  if (fTag === 'acc') rows = rows.filter(function(r){ return r.signal === 'acc_candidate'; });
+  else if (fTag === 'avoid') rows = rows.filter(function(r){ return (r.volume_oi_ratio || 0) >= 5; });
+  else if (fTag === 'watch') rows = rows.filter(function(r){ return r.signal === 'watch'; });
+  rows = rows.filter(function(r){ return (r.forward_score || 0) >= fMinScore; });
+  rows.sort(function(a,b){ var va = a[fSort] || 0, vb = b[fSort] || 0; return fAsc ? va - vb : vb - va; });
+  return rows;
+}
+
+function setPreset(t){ fTag = t; fMinScore = (t === 'acc') ? 3 : 0; render(); }
+function sortBy(k){ if (fSort === k) fAsc = !fAsc; else { fSort = k; fAsc = false; } render(); }
+
+function tagHtml(r){
+  var t = [];
+  if (r.signal === 'acc_candidate') t.push('<span class="tag tag-acc">🧭蓄水候选</span>');
+  else if (r.signal === 'avoid_event') t.push('<span class="tag tag-danger">⛔事件回避</span>');
+  else if (r.signal === 'watch') t.push('<span class="tag tag-watch">👁观察</span>');
+  else t.push('<span class="tag tag-noise">·</span>');
+  if (r.drawdown_60d != null && r.drawdown_60d >= 0.40) t.push('<span class="tag tag-low">深底</span>');
+  if (r.range_20d != null && r.range_20d < 0.30) t.push('<span class="tag tag-low">横盘</span>');
+  if (r.vol_shrink_20d != null && r.vol_shrink_20d < 0.20) t.push('<span class="tag tag-low">缩量</span>');
+  if (r.breakout_consolidation) t.push('<span class="tag tag-new">大阳线后盘整</span>');
+  if (r.spring_test) t.push('<span class="tag tag-new">Spring测试</span>');
+  if (r.funding_rate_pct != null && r.funding_rate_pct > 0.05) t.push('<span class="tag tag-fund">💰正费率</span>');
+  if (r.funding_rate_pct != null && r.funding_rate_pct < -0.05 && (r.change_24h_pct || 0) > 0) t.push('<span class="tag tag-danger">⛔负费率拉盘</span>');
+  if (r.ret_10d != null && r.ret_10d >= -0.05 && r.ret_10d <= 0.15) t.push('<span class="tag tag-watch">缓涨</span>');
+  if (r.vol_compress_5d != null && r.vol_compress_5d < 0.05) t.push('<span class="tag tag-low">缩波</span>');
+  if (r.days_since_listing != null && r.days_since_listing <= 180) t.push('<span class="tag tag-new">新上</span>');
+  return t.join(' ');
+}
+
+function envHtml(){
+  if (!ENV || ENV.up == null) return '<div class="env env-na">BTC 方向：未知（仅环境对照，不参与筛选）</div>';
+  if (ENV.up) return '<div class="env env-bull">🟢 BTC 环境：向上（BTC ' + fP(ENV.close) + ' &gt; SMA20 ' + fP(ENV.sma20) + '）— 仅环境对照，不参与评分/筛选</div>';
+  return '<div class="env env-bear">🔴 BTC 环境：向下（BTC ' + fP(ENV.close) + ' &lt; SMA20 ' + fP(ENV.sma20) + '）— 仅环境对照，不参与评分/筛选</div>';
+}
+
+function render(){
+  var rows = filtered(), watch = getWatch();
+  var accN = DATA.filter(function(r){ return r.signal === 'acc_candidate'; }).length;
+  var avoidN = DATA.filter(function(r){ return (r.volume_oi_ratio || 0) >= 5; }).length;
+  var watchN = Object.keys(watch).length;
+
+  document.getElementById('env').innerHTML = envHtml();
+  document.getElementById('bar').innerHTML =
+    '<button class="btn' + (fTag === '' ? ' btn-active' : '') + '" onclick="setPreset(\'\')">🎯 全部 (' + rows.length + ')</button>' +
+    '<button class="btn' + (fTag === 'acc' ? ' btn-active' : '') + '" onclick="setPreset(\'acc\')">🧭 蓄水候选 (' + accN + ')</button>' +
+    '<button class="btn' + (fTag === 'avoid' ? ' btn-active' : '') + '" onclick="setPreset(\'avoid\')">⛔ 回避名单 (' + avoidN + ')</button>' +
+    '<button class="btn' + (fTag === 'watch' ? ' btn-active' : '') + '" onclick="setPreset(\'watch\')">👁 观察池 (' + watchN + ')</button>' +
+    '<span class="dim" style="margin-left:auto">快照: ' + e(DATA.updated || '—') + '</span>';
+  document.getElementById('stats').innerHTML = '🧭候选 ' + accN + ' · ⛔回避 ' + avoidN + ' · 👁已标记 ' + watchN;
+
+  if (!rows.length) {
+    document.getElementById('tbl').innerHTML = '<div class="empty-msg">没有符合条件的币。</div>';
+  } else {
+    var H = '<table><thead><tr><th></th><th onclick="sortBy(\'symbol\')">币种</th><th onclick="sortBy(\'price\')">价格</th>' +
+      '<th onclick="sortBy(\'change_24h_pct\')">24h%</th><th onclick="sortBy(\'oi_value\')">OI($M)</th>' +
+      '<th onclick="sortBy(\'volume_oi_ratio\')">额/OI</th><th onclick="sortBy(\'oi_pctile_30d\')">OI分位</th>' +
+      '<th onclick="sortBy(\'drawdown_60d\')">回撤60d</th><th onclick="sortBy(\'range_20d\')">横盘20d</th>' +
+      '<th onclick="sortBy(\'vol_shrink_20d\')">缩量</th><th onclick="sortBy(\'near_low_20d\')">距低点</th>' +
+      '<th onclick="sortBy(\'funding_rate_pct\')">资费%</th><th onclick="sortBy(\'days_since_listing\')">上线</th>' +
+      '<th onclick="sortBy(\'forward_score\')">评分</th><th>信号</th><th></th></tr></thead><tbody>';
+    rows.slice(0, 300).forEach(function(r){
+      var isAvoid = (r.volume_oi_ratio || 0) >= 5;
+      var cls = isAvoid ? 'fwd-avoid' : (r.signal === 'acc_candidate' ? 'fwd-acc' : '');
+      var marked = !!watch[r.symbol];
+      H += '<tr class="' + cls + '">' +
+        '<td>' + (marked ? '✅' : '') + '</td>' +
+        '<td class="mono"><b>' + e(r.base_asset) + '</b></td>' +
+        '<td class="mono">' + fP(r.price) + '</td>' +
+        '<td class="' + ((r.change_24h_pct||0) >= 0 ? 'up' : 'down') + '">' + fC(r.change_24h_pct) + '</td>' +
+        '<td class="mono">' + (r.oi_value != null ? (r.oi_value/1e6).toFixed(1) : '—') + '</td>' +
+        '<td class="mono">' + (r.volume_oi_ratio != null ? r.volume_oi_ratio.toFixed(1) + 'x' : '—') + '</td>' +
+        '<td class="mono">' + (r.oi_pctile_30d != null ? (r.oi_pctile_30d*100).toFixed(0) + '%' : '—') + '</td>' +
+        '<td class="mono">' + (r.drawdown_60d != null ? (r.drawdown_60d*100).toFixed(0) + '%' : '—') + '</td>' +
+        '<td class="mono">' + (r.range_20d != null ? (r.range_20d*100).toFixed(0) + '%' : '—') + '</td>' +
+        '<td class="mono">' + (r.vol_shrink_20d != null ? (r.vol_shrink_20d*100).toFixed(0) + '%' : '—') + '</td>' +
+        '<td class="mono">' + (r.near_low_20d != null ? r.near_low_20d.toFixed(2) : '—') + '</td>' +
+        '<td class="mono">' + (r.funding_rate_pct != null ? r.funding_rate_pct.toFixed(3) + '%' : '—') + '</td>' +
+        '<td class="mono">' + (r.days_since_listing != null ? r.days_since_listing + 'd' : '—') + '</td>' +
+        '<td class="mono score">' + (r.forward_score != null ? r.forward_score : '—') + '</td>' +
+        '<td>' + tagHtml(r) + '</td>' +
+        '<td><button class="btn btn-sm" onclick="toggleWatch(\'' + r.symbol + '\')">' + (marked ? '取消' : '标记') + '</button></td></tr>';
+    });
+    H += '</tbody></table>';
+    document.getElementById('tbl').innerHTML = H;
+  }
+
+  document.getElementById('foot').innerHTML =
+    '规则：硬门槛（吸筹结构，验证 dn10 3.3% vs 全市场 9.7%）= 回撤60d≥40% + 横盘20d&lt;30% + 缩量&lt;20% + 距低点&gt;1.03 + 5日无异动；' +
+    '强度分：深底/更横/更枯竭/低波动/OI甜蜜区(2M-8M)/大阳线后盘整/缓涨/Spring测试/正费率/新上各+1~2，负费率拉盘-3，额/OI≥5 -3（验证 fwd5 -1.7% 回避）；' +
+    'OI 分位仅展示不参与评分（验证：叠加反而更差 -1.5%）。BTC 仅环境对照。仅供研究参考，不构成投资建议。';
+}
+
+fetch('/api/forward').then(function(r){ return r.json(); }).then(function(d){
+  DATA = d.data || [];
+  ENV = d.env || null;
+  DATA.updated = d.updated;
+  render();
+}).catch(function(err){
+  document.getElementById('tbl').innerHTML = '<div class="empty-msg">加载失败: ' + e(err.message) + '</div>';
+});
+</script>
+</body>
+</html>

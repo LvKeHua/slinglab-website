@@ -1,0 +1,156 @@
+/* ═══ 🪙 小币筛选器 视图样式 ═══ */
+/* 主题与 _demon.css 一致，使用 var(--*) 基础变量，cf- 前缀避免类名冲突 */
+
+/* 第三 Tab 激活态（金色系，区别于蓝/红的其他两 Tab） */
+.tab-btn.tab-coinfilter.active{background:linear-gradient(135deg,rgba(245,158,11,0.2),rgba(16,185,129,0.1));border-color:rgba(245,158,11,0.45);color:var(--text);box-shadow:0 0 16px rgba(245,158,11,0.18)}
+
+/* ── 预设按钮（与 demon 同款样式）── */
+.cf-preset-row{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px}
+.cf-preset{flex:1;min-width:88px;padding:9px 8px;border:1px solid var(--border);border-radius:var(--radius-sm);background:var(--surface);color:var(--text-secondary);font-size:.72rem;font-weight:600;cursor:pointer;transition:var(--transition)}
+.cf-preset:hover{border-color:var(--border-active);color:var(--text)}
+.cf-preset.active{background:linear-gradient(135deg,rgba(245,158,11,0.18),rgba(16,185,129,0.12));border-color:rgba(245,158,11,0.4);color:#fcd34d;box-shadow:0 0 12px rgba(245,158,11,0.15)}
+
+/* ── 筛选卡片 ── */
+.cf-filter-card{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:12px 14px;margin-bottom:10px}
+.cf-filter-card .label{font-size:.62rem;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.8px;margin-bottom:8px}
+.cf-filter-card .input-row{display:flex;gap:8px;align-items:center;margin-bottom:4px}
+.cf-filter-card .filter-input{flex:1;padding:6px 8px;border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);font-size:.8rem;width:0;min-width:0;text-align:center;background:var(--surface-alt);color:var(--text);transition:var(--transition);font-variant-numeric:tabular-nums}
+.cf-filter-card .filter-input:focus{border-color:var(--accent);outline:none;box-shadow:0 0 0 3px var(--accent-glow)}
+.cf-filter-card .range-sep{color:var(--text-muted);font-size:.8rem;flex-shrink:0}
+.cf-filter-card input[type=range]{-webkit-appearance:none;appearance:none;width:100%;height:4px;border-radius:2px;background:rgba(255,255,255,0.1);outline:none;margin:8px 0;transition:var(--transition)}
+.cf-filter-card input[type=range]::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:14px;height:14px;border-radius:50%;background:#f59e0b;border:2px solid var(--surface);cursor:pointer;box-shadow:0 0 8px rgba(245,158,11,0.4)}
+.cf-filter-card input[type=range]::-moz-range-thumb{width:14px;height:14px;border-radius:50%;background:#f59e0b;border:2px solid var(--surface);cursor:pointer}
+.cf-sort-row{display:flex;gap:8px;margin-top:4px}
+.cf-sort-row select{flex:1;padding:6px 8px;border:1px solid rgba(255,255,255,0.1);border-radius:var(--radius-sm);font-size:.75rem;background:var(--surface-alt);color:var(--text)}
+
+/* ── 信号标签徽章 ── */
+.cf-tag{display:inline-block;font-size:.58rem;font-weight:600;padding:2px 6px;border-radius:4px;margin:1px 2px;white-space:nowrap}
+.cf-tag-squeeze{background:rgba(239,68,68,0.18);color:#fca5a5;border:1px solid rgba(239,68,68,0.3)}
+.cf-tag-small_cap{background:rgba(59,130,246,0.14);color:#93c5fd;border:1px solid rgba(59,130,246,0.3)}
+.cf-tag-early_pump{background:rgba(16,185,129,0.16);color:#34d399;border:1px solid rgba(16,185,129,0.3)}
+.cf-tag-thin_book{background:rgba(245,158,11,0.16);color:#fbbf24;border:1px solid rgba(245,158,11,0.3)}
+.cf-tag-distribution{background:rgba(239,68,68,0.24);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
+.cf-tag-kill_longs{background:rgba(249,115,22,0.16);color:#fdba74;border:1px solid rgba(249,115,22,0.3)}
+.cf-tag-mentioned{background:rgba(139,92,246,0.16);color:#c4b5fd;border:1px solid rgba(139,92,246,0.3)}
+.cf-tag-new_listing{background:rgba(6,182,212,0.14);color:#67e8f9;border:1px solid rgba(6,182,212,0.3)}
+.cf-tag-funding_anomaly{background:rgba(245,158,11,0.16);color:#fbbf24;border:1px solid rgba(245,158,11,0.3)}
+
+/* ── OI 阶段徽章 ── */
+.cf-stage{display:inline-block;font-size:.58rem;font-weight:600;padding:2px 6px;border-radius:4px;white-space:nowrap}
+.cf-stage-accumulation{background:rgba(100,116,139,0.16);color:#94a3b8;border:1px solid rgba(100,116,139,0.3)}
+.cf-stage-early_pump{background:rgba(59,130,246,0.14);color:#93c5fd;border:1px solid rgba(59,130,246,0.3)}
+.cf-stage-pump{background:rgba(16,185,129,0.16);color:#34d399;border:1px solid rgba(16,185,129,0.3)}
+.cf-stage-mid{background:rgba(245,158,11,0.16);color:#fbbf24;border:1px solid rgba(245,158,11,0.3)}
+.cf-stage-late_distribution{background:rgba(239,68,68,0.22);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
+
+/* ── 资费率着色 ── */
+.cf-fund{font-variant-numeric:tabular-nums}
+.cf-fund-pos{color:#34d399}
+.cf-fund-neg{color:#f87171}
+
+/* 挤压行高亮（同妖币 squeeze-row） */
+tr.cf-squeeze-row td{color:#fca5a5!important}
+tr.cf-squeeze-row td:first-child{position:relative}
+tr.cf-squeeze-row td:first-child::before{content:'';position:absolute;left:0;top:4px;bottom:4px;width:3px;background:linear-gradient(180deg,#ef4444,#b91c1c);border-radius:2px}
+
+/* ── 信号计数统计条 ── */
+.cf-stats{display:flex;gap:6px;flex-wrap:wrap;margin-bottom:10px;background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:10px 12px}
+.cf-stat-chip{display:inline-flex;align-items:center;gap:4px;font-size:.66rem;font-weight:600;padding:3px 10px;border-radius:12px;border:1px solid rgba(255,255,255,0.08);background:rgba(255,255,255,0.04);color:var(--text-secondary)}
+.cf-stat-chip b{color:var(--text);font-variant-numeric:tabular-nums;font-weight:700}
+.cf-chip-squeeze{background:rgba(239,68,68,0.12);color:#fca5a5;border-color:rgba(239,68,68,0.35)}
+.cf-chip-small_cap{background:rgba(59,130,246,0.12);color:#93c5fd;border-color:rgba(59,130,246,0.35)}
+.cf-chip-early_pump{background:rgba(16,185,129,0.12);color:#34d399;border-color:rgba(16,185,129,0.35)}
+.cf-chip-thin_book{background:rgba(245,158,11,0.12);color:#fbbf24;border-color:rgba(245,158,11,0.35)}
+.cf-chip-distribution{background:rgba(239,68,68,0.16);color:#f87171;border-color:rgba(239,68,68,0.4)}
+.cf-chip-kill_longs{background:rgba(249,115,22,0.12);color:#fdba74;border-color:rgba(249,115,22,0.35)}
+.cf-chip-mentioned{background:rgba(139,92,246,0.12);color:#c4b5fd;border-color:rgba(139,92,246,0.35)}
+.cf-chip-new_listing{background:rgba(6,182,212,0.12);color:#67e8f9;border-color:rgba(6,182,212,0.35)}
+.cf-chip-funding_anomaly{background:rgba(245,158,11,0.12);color:#fbbf24;border-color:rgba(245,158,11,0.35)}
+.cf-chip-squeeze b,.cf-chip-distribution b{color:#fca5a5}
+.cf-chip-small_cap b,.cf-chip-new_listing b{color:#93c5fd}
+.cf-chip-early_pump b{color:#34d399}
+.cf-chip-thin_book b,.cf-chip-funding_anomaly b{color:#fbbf24}
+.cf-chip-kill_longs b{color:#fdba74}
+.cf-chip-mentioned b{color:#c4b5fd}
+
+/* ── 可展开表格 ── */
+tr.cf-row-click{cursor:pointer}
+tr.cf-row-click:hover td{background:rgba(255,255,255,0.035)}
+.cf-expand-arrow{color:var(--text-muted);font-size:.7rem;width:20px;text-align:center;user-select:none}
+.cf-detail-row td{background:rgba(255,255,255,0.02)!important;padding:12px 16px!important;border-top:none!important;cursor:default}
+.cf-detail-inner{max-width:100%}
+
+/* ── 5步检查清单 ── */
+.cf-checklist{background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-sm);padding:10px 12px}
+.cf-checklist-head{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:4px;margin-bottom:8px}
+.cf-checklist-head span:first-child{font-size:.75rem;font-weight:600;color:var(--text)}
+.cf-checklist-hint{font-size:.58rem;color:var(--text-muted)}
+.cf-checklist-steps{display:flex;gap:6px;flex-wrap:wrap}
+.cf-check-step{flex:1;min-width:140px;display:flex;align-items:center;gap:6px;padding:7px 9px;border:1px solid rgba(255,255,255,0.08);border-radius:var(--radius-sm);background:var(--surface);cursor:pointer;transition:var(--transition)}
+.cf-check-step:hover{border-color:var(--border-active)}
+.cf-check-mark{width:18px;height:18px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:.72rem;font-weight:700;flex-shrink:0;font-variant-numeric:tabular-nums}
+.cf-check-blank{background:rgba(255,255,255,0.06);color:var(--text-muted);border:1px dashed rgba(255,255,255,0.22)}
+.cf-check-ok{background:rgba(16,185,129,0.2);color:#34d399;border:1px solid rgba(16,185,129,0.4)}
+.cf-check-no{background:rgba(239,68,68,0.2);color:#f87171;border:1px solid rgba(239,68,68,0.4)}
+.cf-check-name{font-size:.68rem;font-weight:600;color:var(--text);white-space:nowrap}
+.cf-check-desc{font-size:.58rem;color:var(--text-muted);line-height:1.4}
+
+/* ── 展开详情元信息 ── */
+.cf-detail-meta{display:flex;gap:8px;flex-wrap:wrap;margin-top:8px}
+.cf-meta-item{display:flex;gap:6px;align-items:center;font-size:.66rem;color:var(--text-secondary);background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);padding:4px 10px;border-radius:6px;font-variant-numeric:tabular-nums}
+.cf-meta-label{color:var(--text-muted)}
+
+/* ── 图表 ── */
+.cf-chart-wrap{background:var(--surface);border:1px solid var(--border);border-radius:var(--radius);padding:14px 16px;margin-bottom:12px}
+.cf-chart-wrap h4{font-size:.8rem;font-weight:600;color:var(--text);margin-bottom:10px}
+.cf-hbar-row{display:flex;align-items:center;gap:8px;margin:3px 0;font-size:.66rem}
+.cf-hbar-label{width:52px;text-align:right;color:var(--text-secondary);flex-shrink:0;font-variant-numeric:tabular-nums}
+.cf-hbar-track{flex:1;height:12px;background:rgba(255,255,255,0.05);border-radius:3px;overflow:hidden}
+.cf-hbar-fill{height:100%;background:linear-gradient(90deg,#f59e0b,#10b981);border-radius:3px;min-width:2px}
+.cf-hbar-val{width:56px;color:var(--text-muted);flex-shrink:0;font-variant-numeric:tabular-nums}
+.cf-hist-wrap{display:flex;align-items:flex-end;gap:4px;height:110px;padding-top:4px}
+.cf-hist-bar{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%}
+.cf-hist-fill{background:linear-gradient(180deg,#3b82f6,#1d4ed8);border-radius:3px 3px 0 0;min-height:2px;transition:height .3s}
+.cf-hist-fill.neg{background:linear-gradient(180deg,#ef4444,#b91c1c)}
+.cf-hist-fill.pos{background:linear-gradient(180deg,#10b981,#059669)}
+.cf-hist-label{font-size:.55rem;color:var(--text-muted);text-align:center;margin-top:4px;white-space:nowrap}
+.cf-scatter-wrap{position:relative;height:300px;background:rgba(255,255,255,0.02);border:1px solid rgba(255,255,255,0.06);border-radius:var(--radius-sm);overflow:visible;margin-bottom:22px}
+.cf-scatter-plot{position:absolute;top:24px;right:36px;bottom:28px;left:44px;overflow:hidden;border-radius:4px}
+.cf-scatter-dot{position:absolute;border-radius:50%;opacity:.85;cursor:pointer;transition:transform .15s,box-shadow .15s;transform:translate(-50%,-50%);z-index:2}
+.cf-scatter-dot:hover{transform:translate(-50%,-50%) scale(1.6);opacity:1;z-index:6;box-shadow:0 0 10px rgba(255,255,255,0.25)}
+.cf-scatter-grid{position:absolute;pointer-events:none;background:rgba(255,255,255,0.05);z-index:0}
+.cf-scatter-grid-v{top:0;bottom:0;width:1px}
+.cf-scatter-grid-h{left:0;right:0;height:1px}
+.cf-scatter-tick{position:absolute;font-size:.55rem;color:var(--text-muted);pointer-events:none;font-variant-numeric:tabular-nums;z-index:1;white-space:nowrap}
+.cf-scatter-tick-x{bottom:-16px;transform:translateX(-50%)}
+.cf-scatter-tick-y{left:-4px;transform:translateX(-100%) translateY(50%);text-align:right}
+.cf-scatter-axis{position:absolute;font-size:.58rem;color:var(--text-secondary);z-index:3;background:var(--surface);padding:0 4px;white-space:nowrap}
+.cf-scatter-x{left:44px;bottom:2px}
+.cf-scatter-y{top:2px;right:8px}
+.cf-scatter-tip{position:absolute;left:50%;transform:translateX(-50%);background:#111827;border:1px solid rgba(255,255,255,0.2);color:#e5e7eb;font-size:.62rem;padding:6px 10px;border-radius:8px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .15s;z-index:30;box-shadow:0 4px 16px rgba(0,0,0,0.5);line-height:1.5}
+.cf-scatter-tip.above{bottom:calc(100% + 6px)}
+.cf-scatter-tip.below{top:calc(100% + 6px)}
+.cf-scatter-dot:hover .cf-scatter-tip{opacity:1}
+.cf-scatter-legend{position:absolute;left:48px;bottom:6px;display:flex;gap:8px;z-index:3;font-size:.55rem;color:var(--text-muted);background:rgba(15,23,42,0.85);padding:3px 8px;border-radius:6px;border:1px solid rgba(255,255,255,0.08)}
+.cf-scatter-legend-item{display:flex;align-items:center;gap:3px}
+.cf-scatter-legend-item i{width:8px;height:8px;border-radius:50%;display:inline-block}
+.cf-note{font-size:.62rem;color:var(--text-muted);margin-top:8px;line-height:1.6}
+
+/* ── 移动端适配 ── */
+@media(max-width:768px){
+  .cf-scatter-wrap{height:240px}
+  .cf-scatter-plot{left:30px;right:20px}
+  .cf-scatter-tick-y{font-size:.48rem}
+  .cf-scatter-tick-x{font-size:.48rem}
+  .cf-scatter-legend{font-size:.48rem;gap:4px}
+}
+
+/* ── Coinalyze 补充列样式：多空比 / 清算 / OI趋势 / 预测资费 ── */
+.cf-lsr{font-variant-numeric:tabular-nums;white-space:nowrap}
+.cf-lsr-high{color:#f87171;font-weight:700}   /* 多空比>2 = 多头拥挤 */
+.cf-lsr-low{color:#34d399;font-weight:700}    /* 多空比<0.5 = 空头拥挤(挤压燃料) */
+.cf-liq{color:#fbbf24;font-variant-numeric:tabular-nums}
+.cf-oit{font-variant-numeric:tabular-nums;white-space:nowrap}
+.cf-oit-up{color:#34d399}
+.cf-oit-down{color:#f87171}
+.cf-detail-meta{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:6px;margin-top:10px;padding-top:8px;border-top:1px solid rgba(255,255,255,0.08)}

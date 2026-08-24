@@ -1,0 +1,23 @@
+name: Deploy Worker
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: cloudflare/wrangler-action@v3
+        with:
+          apiToken: ${{ secrets.CF_API_TOKEN }}
+          secrets: |
+            CMC_API_KEY
+            COINGECKO_API_KEY
+            UPLOAD_AUTH_KEY
+        env:
+          CMC_API_KEY: ${{ secrets.CMC_API_KEY }}
+          COINGECKO_API_KEY: ${{ secrets.COINGECKO_API_KEY }}
+          UPLOAD_AUTH_KEY: ${{ secrets.UPLOAD_AUTH_KEY }}

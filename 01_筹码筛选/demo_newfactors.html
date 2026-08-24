@@ -1,0 +1,147 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>🧪 新因子 Demo · 6 个优化点</title>
+<style>
+:root{--bg:#0b0e14;--card:#12161f;--line:#1e2532;--txt:#dbe2ee;--dim:#7c8798;--up:#34d399;--down:#f87171;--acc:#38bdf8;--warn:#fbbf24;--danger:#ef4444;--purple:#a78bfa;--radius:10px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.5;padding:16px}
+h1{font-size:18px;margin-bottom:4px}
+.sub{color:var(--dim);font-size:12px;margin-bottom:14px}
+.kpi-row{display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap}
+.kpi{flex:1;min-width:120px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:12px;text-align:center}
+.kpi .label{font-size:11px;color:var(--dim);margin-bottom:4px}
+.kpi .val{font-size:20px;font-weight:700}
+.kpi .val.green{color:var(--up)}.kpi .val.red{color:var(--down)}.kpi .val.blue{color:var(--acc)}.kpi .val.purple{color:var(--purple)}
+.bar{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-bottom:10px}
+.btn{background:#1a2130;border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:6px 12px;cursor:pointer;font-size:12px}
+.btn:hover{border-color:#3b4a63}
+.btn-active{background:#1e3a5f;border-color:var(--acc);color:#7dd3fc}
+.dim{color:var(--dim);font-size:12px}
+.table-wrap{overflow-x:auto;border:1px solid var(--line);border-radius:var(--radius)}
+table{width:100%;border-collapse:collapse;white-space:nowrap}
+th{background:#141a26;color:var(--dim);font-weight:600;text-align:left;padding:8px 10px;font-size:12px;cursor:pointer;user-select:none;position:sticky;top:0}
+th:hover{color:var(--txt)}
+td{padding:7px 10px;border-top:1px solid var(--line);font-size:12px}
+tr:hover td{background:#161d2b}
+.mono{font-family:ui-monospace,Consolas,monospace}
+.tag{display:inline-block;padding:1px 6px;border-radius:5px;font-size:11px;margin-right:4px;border:1px solid}
+.tag-wash{color:#fca5a5;border-color:#ef4444;background:rgba(239,68,68,.1)}
+.tag-horiz{color:#6ee7b7;border-color:#10b981;background:rgba(16,185,129,.08)}
+.tag-sm{color:#c4b5fd;border-color:#8b5cf6;background:rgba(139,92,246,.08)}
+.tag-test{color:#fcd34d;border-color:#fbbf24;background:rgba(251,191,36,.1)}
+.tag-dual{color:#f9a8d4;border-color:#ec4899;background:rgba(236,72,153,.08)}
+.tag-trap{color:#93c5fd;border-color:#3b82f6;background:rgba(59,130,246,.1)}
+.score{font-weight:700;color:#7dd3fc}
+.empty-msg{color:var(--dim);padding:30px;text-align:center}
+.foot{color:var(--dim);font-size:11px;margin-top:12px;line-height:1.7}
+.fwd-acc td{background:rgba(56,189,248,.05)}
+</style>
+</head>
+<body>
+<h1>🧪 新因子 Demo · 6 个优化点</h1>
+<div class="sub">数据：backtest_binance_30d.json 快照（530 币 × 100 天日线含 taker + 31 天 OI）· 全部为客户端展示，未接入线上</div>
+<div class="kpi-row" id="kpis"></div>
+<div class="bar" id="bar"></div>
+<div class="table-wrap" id="tbl"></div>
+<div class="foot" id="foot"></div>
+
+<script>
+var DATA = [], STATS = {}, fTag = '', fSort = 'score', fAsc = false;
+
+function e(s){ return String(s == null ? '' : s).replace(/[&<>"']/g, function(c){ return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+function fP(v){ if(v == null) return '—'; if(v >= 1000) return v.toLocaleString(undefined,{maximumFractionDigits:0}); if(v >= 1) return v.toFixed(4); return v.toPrecision(4); }
+
+function filtered(){
+  var rows = DATA.slice();
+  if (fTag === 'wash') rows = rows.filter(function(r){ return r.down_wash; });
+  else if (fTag === 'sm') rows = rows.filter(function(r){ return r.sm_flow != null && r.sm_flow > 0; });
+  else if (fTag === 'test') rows = rows.filter(function(r){ return r.liquidity_test; });
+  else if (fTag === 'dual') rows = rows.filter(function(r){ return r.dual_open; });
+  else if (fTag === 'trap') rows = rows.filter(function(r){ return r.trapped_oi_ratio != null && r.trapped_oi_ratio > 0.5; });
+  rows.sort(function(a,b){ var va = a[fSort] || 0, vb = b[fSort] || 0; return fAsc ? va - vb : vb - va; });
+  return rows;
+}
+function setPreset(t){ fTag = t; render(); }
+function sortBy(k){ if (fSort === k) fAsc = !fAsc; else { fSort = k; fAsc = false; } render(); }
+
+function tagHtml(r){
+  var t = [];
+  if (r.down_wash) t.push('<span class="tag tag-wash">📉下跌洗盘</span>');
+  if (r.horizontal) t.push('<span class="tag tag-horiz">⬅️横盘吸筹</span>');
+  if (r.sm_flow == 2) t.push('<span class="tag tag-sm">🧠SM流入强</span>');
+  else if (r.sm_flow == 1) t.push('<span class="tag tag-sm">🧠SM流入</span>');
+  else if (r.sm_flow == -2) t.push('<span class="tag tag-sm">🧠SM流出强</span>');
+  else if (r.sm_flow == -1) t.push('<span class="tag tag-sm">🧠SM流出</span>');
+  if (r.liquidity_test) t.push('<span class="tag tag-test">🎯流动性测试</span>');
+  if (r.dual_open) t.push('<span class="tag tag-dual">🔀多空双开</span>');
+  if (r.trapped_oi_ratio != null && r.trapped_oi_ratio > 0.5) t.push('<span class="tag tag-trap">🧱套牢盘密</span>');
+  return t.join(' ');
+}
+
+function render(){
+  var rows = filtered();
+  document.getElementById('kpis').innerHTML =
+    '<div class="kpi"><div class="label">总币数</div><div class="val blue">' + STATS.total + '</div></div>' +
+    '<div class="kpi"><div class="label">📉下跌洗盘</div><div class="val green">' + STATS.down_wash + '</div></div>' +
+    '<div class="kpi"><div class="label">🧠SM流入</div><div class="val purple">' + STATS.sm_inflow + '</div></div>' +
+    '<div class="kpi"><div class="label">🎯流动性测试</div><div class="val" style="color:var(--warn)">' + STATS.liquidity_test + '</div></div>' +
+    '<div class="kpi"><div class="label">🔀多空双开</div><div class="val red">' + STATS.dual_open + '</div></div>' +
+    '<div class="kpi"><div class="label">🧱套牢盘密</div><div class="val" style="color:#93c5fd">' + STATS.trapped_dense + '</div></div>';
+
+  document.getElementById('bar').innerHTML =
+    '<button class="btn' + (fTag === '' ? ' btn-active' : '') + '" onclick="setPreset(\'\')">🎯 全部 (' + rows.length + ')</button>' +
+    '<button class="btn' + (fTag === 'wash' ? ' btn-active' : '') + '" onclick="setPreset(\'wash\')">📉下跌洗盘 (' + STATS.down_wash + ')</button>' +
+    '<button class="btn' + (fTag === 'sm' ? ' btn-active' : '') + '" onclick="setPreset(\'sm\')">🧠SM流入 (' + STATS.sm_inflow + ')</button>' +
+    '<button class="btn' + (fTag === 'test' ? ' btn-active' : '') + '" onclick="setPreset(\'test\')">🎯流动性测试 (' + STATS.liquidity_test + ')</button>' +
+    '<button class="btn' + (fTag === 'dual' ? ' btn-active' : '') + '" onclick="setPreset(\'dual\')">🔀多空双开 (' + STATS.dual_open + ')</button>' +
+    '<button class="btn' + (fTag === 'trap' ? ' btn-active' : '') + '" onclick="setPreset(\'trap\')">🧱套牢盘密 (' + STATS.trapped_dense + ')</button>' +
+    '<span class="dim" style="margin-left:auto">' + e(DATA.updated || '') + '</span>';
+
+  if (!rows.length) {
+    document.getElementById('tbl').innerHTML = '<div class="empty-msg">没有符合条件的币。</div>';
+  } else {
+    var H = '<table><thead><tr>' +
+      '<th onclick="sortBy(\'symbol\')">币种</th><th onclick="sortBy(\'price\')">价格</th>' +
+      '<th onclick="sortBy(\'oi_value\')">OI</th><th onclick="sortBy(\'taker_ratio_5d\')">taker5d</th>' +
+      '<th onclick="sortBy(\'sm_flow\')">SM流</th><th onclick="sortBy(\'oi_surge\')">OI 24h%</th>' +
+      '<th onclick="sortBy(\'down_wash_score\')">洗盘分</th><th>套牢区</th>' +
+      '<th onclick="sortBy(\'score\')">综合分</th><th>标签</th></tr></thead><tbody>';
+    rows.slice(0, 300).forEach(function(r){
+      var cls = r.down_wash ? 'fwd-acc' : '';
+      H += '<tr class="' + cls + '">' +
+        '<td class="mono"><b>' + e(r.base_asset) + '</b></td>' +
+        '<td class="mono">' + fP(r.price) + '</td>' +
+        '<td class="mono">' + (r.oi_value != null ? (r.oi_value/1e6).toFixed(1) + 'M' : '—') + '</td>' +
+        '<td class="mono">' + (r.taker_ratio_5d != null ? r.taker_ratio_5d.toFixed(3) : '—') + '</td>' +
+        '<td class="mono">' + (r.sm_flow != null ? (r.sm_flow > 0 ? '+' : '') + r.sm_flow : '—') + '</td>' +
+        '<td class="mono ' + ((r.oi_surge||0) > 0 ? 'up' : 'down') + '">' + (r.oi_surge != null ? r.oi_surge.toFixed(1) + '%' : '—') + '</td>' +
+        '<td class="mono">' + (r.down_wash_score > 0 ? r.down_wash_score : '—') + '</td>' +
+        '<td class="mono">' + (r.trapped_zone ? r.trapped_zone[0].toPrecision(4) + '~' + r.trapped_zone[1].toPrecision(4) + ' (' + Math.round(r.trapped_oi_ratio*100) + '%)' : '—') + '</td>' +
+        '<td class="mono score">' + r.score + '</td>' +
+        '<td>' + tagHtml(r) + '</td></tr>';
+    });
+    H += '</tbody></table>';
+    document.getElementById('tbl').innerHTML = H;
+  }
+
+  document.getElementById('foot').innerHTML =
+    '规则：📉下跌洗盘 = 近20日阴跌≥12天 + 累计跌5-40% + 缩量<30% + 底部企稳（与横盘吸筹并行，堵硬门槛盲区）· ' +
+    '🧠SM流 = taker买入占比5日 vs 20日趋势 + OI变化（Smart Money 代理，他 3 月实盘策略）· ' +
+    '🎯流动性测试 = 近60日同价位±3%触及≥3次（画门）· 🔀多空双开 = OI激增>5% + 10日横盘<5% + taker≈0.5 · ' +
+    '🧱套牢盘 = OI历史×价格区间密度（>50%集中在某档=阻力区）· 收线窗口需实时时钟（demo 未启用）。仅供研究参考。';
+}
+
+fetch('/api/newfactors').then(function(r){ return r.json(); }).then(function(d){
+  DATA = d.data || [];
+  STATS = d.stats || {};
+  DATA.updated = d.updated;
+  render();
+}).catch(function(err){
+  document.getElementById('tbl').innerHTML = '<div class="empty-msg">加载失败: ' + e(err.message) + '</div>';
+});
+</script>
+</body>
+</html>

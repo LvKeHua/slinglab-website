@@ -1,0 +1,8 @@
+{
+  "/page": "app/page.js",
+  "/portfolio/page": "app/portfolio/page.js",
+  "/market-radar/page": "app/market-radar/page.js",
+  "/intelligence/page": "app/intelligence/page.js",
+  "/wallets/page": "app/wallets/page.js",
+  "/funding-heatmap/page": "app/funding-heatmap/page.js"
+}

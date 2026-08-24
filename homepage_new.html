@@ -1,0 +1,347 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<meta name="description" content="SlingLab — 交易工具实验室 · Crypto Trading Tool Lab">
+<meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+<meta http-equiv="Pragma" content="no-cache">
+<meta http-equiv="Expires" content="0">
+<title>SlingLab · 交易工具实验室</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+:root{
+  --bg:#070b14;
+  --bg-2:#0b1120;
+  --surface:rgba(17,27,46,0.6);
+  --surface-hover:rgba(26,38,64,0.9);
+  --border:rgba(255,255,255,0.08);
+  --border-active:rgba(59,130,246,0.5);
+  --text:#f1f5f9;
+  --text-secondary:#94a3b8;
+  --text-muted:#475569;
+  --accent:#3b82f6;
+  --accent-2:#10b981;
+  --accent-3:#f59e0b;
+  --glow:rgba(59,130,246,0.25);
+  --green-glow:rgba(16,185,129,0.2);
+}
+html,body{height:100%}
+body{
+  font-family:-apple-system,BlinkMacSystemFont,'Segoe UI','PingFang SC','Microsoft YaHei',sans-serif;
+  background:var(--bg);
+  color:var(--text);
+  overflow-x:hidden;
+  position:relative;
+}
+/* ── 背景网格 + 光晕 ── */
+.bg-grid{
+  position:fixed;inset:0;z-index:0;pointer-events:none;
+  background-image:
+    linear-gradient(rgba(59,130,246,0.04) 1px,transparent 1px),
+    linear-gradient(90deg,rgba(59,130,246,0.04) 1px,transparent 1px);
+  background-size:48px 48px;
+  mask-image:radial-gradient(ellipse 80% 60% at 50% 30%,black 20%,transparent 75%);
+  -webkit-mask-image:radial-gradient(ellipse 80% 60% at 50% 30%,black 20%,transparent 75%);
+}
+.bg-orb{
+  position:fixed;border-radius:50%;filter:blur(90px);pointer-events:none;z-index:0;
+  opacity:.5;animation:orbFloat 16s ease-in-out infinite alternate;
+}
+.bg-orb-1{width:420px;height:420px;top:-120px;left:-80px;background:radial-gradient(circle,rgba(59,130,246,0.35),transparent 70%)}
+.bg-orb-2{width:380px;height:380px;bottom:-100px;right:-60px;background:radial-gradient(circle,rgba(16,185,129,0.25),transparent 70%);animation-delay:-8s}
+.bg-orb-3{width:260px;height:260px;top:40%;left:55%;background:radial-gradient(circle,rgba(245,158,11,0.12),transparent 70%);animation-delay:-4s}
+@keyframes orbFloat{0%{transform:translate(0,0) scale(1)}100%{transform:translate(30px,-40px) scale(1.15)}}
+/* 粒子 canvas */
+#particles{position:fixed;inset:0;z-index:0;pointer-events:none}
+
+.wrap{
+  position:relative;z-index:1;
+  min-height:100vh;
+  max-width:960px;margin:0 auto;
+  padding:48px 24px 40px;
+  display:flex;flex-direction:column;
+  align-items:center;
+}
+
+/* ── 头部 Logo ── */
+header{text-align:center;margin-bottom:52px;position:relative}
+.logo-row{display:flex;align-items:center;justify-content:center;gap:14px;margin-bottom:14px}
+.logo-mark{
+  width:52px;height:52px;border-radius:14px;
+  background:linear-gradient(135deg,#3b82f6,#10b981);
+  display:flex;align-items:center;justify-content:center;
+  font-size:26px;font-weight:800;color:#fff;
+  box-shadow:0 0 24px var(--glow),0 0 60px rgba(16,185,129,0.15);
+  animation:logoPulse 3s ease-in-out infinite;
+}
+@keyframes logoPulse{0%,100%{box-shadow:0 0 20px var(--glow)}50%{box-shadow:0 0 34px var(--glow),0 0 70px rgba(59,130,246,0.3)}}
+h1{
+  font-size:34px;font-weight:800;letter-spacing:2px;
+  background:linear-gradient(90deg,#93c5fd,#34d399,#fbbf24);
+  -webkit-background-clip:text;background-clip:text;
+  -webkit-text-fill-color:transparent;color:transparent;
+  text-shadow:none;filter:drop-shadow(0 0 18px rgba(59,130,246,0.25));
+}
+.subtitle{color:var(--text-muted);font-size:13px;letter-spacing:4px;text-transform:uppercase;margin-top:6px}
+.subtitle .dot{display:inline-block;width:5px;height:5px;border-radius:50%;background:#10b981;margin:0 8px 2px;animation:dotBlink 2s ease-in-out infinite}
+@keyframes dotBlink{0%,100%{opacity:1}50%{opacity:.3}}
+
+/* 状态徽章行 */
+.status-row{display:flex;gap:10px;justify-content:center;margin-top:20px;flex-wrap:wrap}
+.badge{
+  font-size:11px;padding:5px 12px;border-radius:999px;
+  background:rgba(16,185,129,0.1);border:1px solid rgba(16,185,129,0.3);
+  color:#6ee7b7;display:flex;align-items:center;gap:6px;
+  font-weight:500;letter-spacing:.5px;
+}
+.badge .pulse{width:6px;height:6px;border-radius:50%;background:#10b981;animation:pulse 1.6s ease-in-out infinite}
+@keyframes pulse{0%,100%{box-shadow:0 0 0 0 rgba(16,185,129,0.6)}50%{box-shadow:0 0 0 5px rgba(16,185,129,0)}}
+.badge.updating{background:rgba(59,130,246,0.1);border-color:rgba(59,130,246,0.3);color:#93c5fd}
+.badge.updating .pulse{background:#3b82f6;animation-delay:.3s}
+
+/* ── 项目卡片 ── */
+.projects{display:flex;flex-direction:column;gap:16px;width:100%;max-width:640px}
+.project-card{
+  position:relative;display:flex;align-items:center;gap:20px;
+  padding:22px 24px;text-decoration:none;color:var(--text);
+  background:var(--surface);border:1px solid var(--border);border-radius:14px;
+  backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);
+  overflow:hidden;transition:all .3s cubic-bezier(.4,0,.2,1);
+  animation:cardIn .6s ease-out backwards;
+}
+.project-card:nth-child(1){animation-delay:.15s}
+.project-card:nth-child(2){animation-delay:.3s}
+.project-card:nth-child(3){animation-delay:.45s}
+@keyframes cardIn{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}
+/* 渐变边框光效 */
+.project-card::before{
+  content:'';position:absolute;top:0;left:-100%;width:100%;height:100%;
+  background:linear-gradient(90deg,transparent,rgba(59,130,246,0.06),transparent);
+  transition:left .6s ease;
+}
+.project-card:hover::before{left:100%}
+.project-card::after{
+  content:'';position:absolute;inset:0;border-radius:14px;padding:1px;
+  background:linear-gradient(135deg,rgba(59,130,246,0.5),rgba(16,185,129,0.4),transparent 60%);
+  -webkit-mask:linear-gradient(#fff 0 0) content-box,linear-gradient(#fff 0 0);
+  -webkit-mask-composite:xor;mask-composite:exclude;
+  opacity:0;transition:opacity .3s;
+}
+.project-card:hover::after{opacity:1}
+.project-card:hover{
+  transform:translateY(-3px);
+  background:var(--surface-hover);
+  border-color:var(--border-active);
+  box-shadow:0 12px 40px rgba(0,0,0,0.4),0 0 30px rgba(59,130,246,0.08);
+}
+/* 图标 */
+.project-icon{
+  width:54px;height:54px;border-radius:13px;flex-shrink:0;
+  display:flex;align-items:center;justify-content:center;font-size:25px;
+  background:rgba(59,130,246,0.12);border:1px solid rgba(59,130,246,0.25);
+  transition:all .3s;position:relative;
+}
+.project-card:hover .project-icon{transform:scale(1.1) rotate(-6deg);box-shadow:0 0 20px var(--glow)}
+.project-card:nth-child(2) .project-icon{background:rgba(16,185,129,0.12);border-color:rgba(16,185,129,0.25)}
+.project-card:nth-child(2):hover .project-icon{box-shadow:0 0 20px var(--green-glow)}
+.project-card:nth-child(3) .project-icon{background:rgba(245,158,11,0.12);border-color:rgba(245,158,11,0.25)}
+.project-card:nth-child(3):hover .project-icon{box-shadow:0 0 20px rgba(245,158,11,0.2)}
+/* 信息区 */
+.project-info{flex:1;min-width:0}
+.project-name{font-size:16px;font-weight:700;letter-spacing:.3px;margin-bottom:5px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.project-desc{font-size:12.5px;color:var(--text-secondary);line-height:1.6}
+.badge-new{
+  font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:4px;
+  background:linear-gradient(135deg,rgba(245,158,11,0.25),rgba(239,68,68,0.2));
+  color:#fbbf24;border:1px solid rgba(245,158,11,0.35);letter-spacing:1px;
+}
+.badge-live{
+  font-size:9.5px;font-weight:700;padding:2px 7px;border-radius:4px;
+  background:linear-gradient(135deg,rgba(16,185,129,0.2),rgba(59,130,246,0.15));
+  color:#34d399;border:1px solid rgba(16,185,129,0.35);letter-spacing:1px;
+}
+/* 箭头 */
+.project-arrow{
+  font-size:18px;color:var(--text-muted);flex-shrink:0;
+  transition:all .3s;
+}
+.project-card:hover .project-arrow{color:#93c5fd;transform:translateX(6px)}
+/* 卡片底部元信息 */
+.project-meta{display:flex;gap:10px;margin-top:8px;flex-wrap:wrap}
+.meta-tag{font-size:10px;color:var(--text-muted);background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.07);padding:2px 8px;border-radius:4px}
+
+/* ── 底部 ── */
+footer{
+  margin-top:auto;padding-top:60px;text-align:center;
+  color:var(--text-muted);font-size:11px;letter-spacing:1px;line-height:2;
+}
+footer .divider{width:60px;height:1px;background:linear-gradient(90deg,transparent,rgba(59,130,246,0.4),transparent);margin:0 auto 14px}
+.social-row{display:flex;justify-content:center;gap:16px;margin-top:8px}
+.social-row a{color:var(--text-muted);text-decoration:none;font-size:11px;transition:color .2s}
+.social-row a:hover{color:#93c5fd}
+.uptime{font-size:10px;color:#334155}
+
+/* 响应式 */
+@media (max-width:640px){
+  .wrap{padding:32px 16px 28px}
+  h1{font-size:28px}
+  .logo-mark{width:44px;height:44px;font-size:22px}
+  .project-card{padding:16px 16px;gap:14px}
+  .project-icon{width:46px;height:46px;font-size:20px}
+  .project-name{font-size:14.5px}
+  .project-desc{font-size:11.5px}
+}
+@media (prefers-reduced-motion:reduce){
+  *,*::before,*::after{animation:none!important;transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="bg-grid"></div>
+<div class="bg-orb bg-orb-1"></div>
+<div class="bg-orb bg-orb-2"></div>
+<div class="bg-orb bg-orb-3"></div>
+<canvas id="particles"></canvas>
+
+<div class="wrap">
+  <header>
+    <div class="logo-row">
+      <div class="logo-mark">S</div>
+      <h1>SlingLab</h1>
+    </div>
+    <p class="subtitle"><span class="dot"></span>TRADING TOOL LAB<span class="dot"></span></p>
+    <div class="status-row">
+      <span class="badge"><span class="pulse"></span>数据实时更新</span>
+      <span class="badge updating"><span class="pulse"></span>多交易所接入</span>
+    </div>
+  </header>
+
+  <div class="projects">
+    <a href="/screener/" class="project-card">
+      <div class="project-icon">🔍</div>
+      <div class="project-info">
+        <div class="project-name">筹码真空 · 代币筛选器 <span class="badge-live">LIVE</span></div>
+        <div class="project-desc">小市值代币低流通率筛选 · 筹码分布 + 妖币扫描 + 小币筛选</div>
+        <div class="project-meta">
+          <span class="meta-tag">币安/Bybit/OKX</span>
+          <span class="meta-tag">15分钟更新</span>
+          <span class="meta-tag">3大筛选引擎</span>
+        </div>
+      </div>
+      <span class="project-arrow">→</span>
+    </a>
+
+    <a href="/stone/" class="project-card">
+      <div class="project-icon">📊</div>
+      <div class="project-info">
+        <div class="project-name">Stone · Trading Journal <span class="badge-new">DEMO</span></div>
+        <div class="project-desc">加密货币交易日志分析 · 盈亏统计与持仓管理</div>
+        <div class="project-meta">
+          <span class="meta-tag">交易复盘</span>
+          <span class="meta-tag">盈亏统计</span>
+          <span class="meta-tag">持仓管理</span>
+        </div>
+      </div>
+      <span class="project-arrow">→</span>
+    </a>
+
+    <a href="/runnerxbt/" class="project-card">
+      <div class="project-icon">📈</div>
+      <div class="project-info">
+        <div class="project-name">RunnerXBT Insights</div>
+        <div class="project-desc">Telegram trading signal tracker & analytics</div>
+        <div class="project-meta">
+          <span class="meta-tag">信号追踪</span>
+          <span class="meta-tag">TG接入</span>
+          <span class="meta-tag">数据分析</span>
+        </div>
+      </div>
+      <span class="project-arrow">→</span>
+    </a>
+  </div>
+
+  <footer>
+    <div class="divider"></div>
+    <div>SLINGLAB · 交易工具实验室</div>
+    <div class="social-row">
+      <a href="https://github.com/LvKeHua" target="_blank" rel="noopener">GitHub</a>
+      <span>·</span>
+      <a href="/screener/" target="_blank">筹码筛选器</a>
+    </div>
+    <div class="uptime" id="uptime">系统运行中</div>
+  </footer>
+</div>
+
+<script>
+// ── 粒子背景 ──
+(function(){
+  var canvas=document.getElementById('particles'),ctx=canvas.getContext('2d');
+  var W,H,parts=[],mouse={x:null,y:null},last=0;
+  var DPR=Math.min(window.devicePixelRatio||1,2);
+  function resize(){
+    W=canvas.width=window.innerWidth*DPR;
+    H=canvas.height=window.innerHeight*DPR;
+    canvas.style.width=window.innerWidth+'px';
+    canvas.style.height=window.innerHeight+'px';
+    ctx.setTransform(DPR,0,0,DPR,0,0);
+    var count=Math.min(70,Math.floor(window.innerWidth*window.innerHeight/22000));
+    parts=[];
+    for(var i=0;i<count;i++){
+      parts.push({
+        x:Math.random()*window.innerWidth,
+        y:Math.random()*window.innerHeight,
+        vx:(Math.random()-.5)*.35,
+        vy:(Math.random()-.5)*.35,
+        r:Math.random()*1.6+.6,
+        c:['59,130,246','16,185,129','148,163,184'][Math.floor(Math.random()*3)]
+      });
+    }
+  }
+  function tick(t){
+    ctx.clearRect(0,0,W/DPR,H/DPR);
+    for(var i=0;i<parts.length;i++){
+      var p=parts[i];
+      p.x+=p.vx;p.y+=p.vy;
+      if(p.x<0||p.x>window.innerWidth)p.vx*=-1;
+      if(p.y<0||p.y>window.innerHeight)p.vy*=-1;
+      // 鼠标吸引
+      if(mouse.x!=null){
+        var dx=mouse.x-p.x,dy=mouse.y-p.y,d2=dx*dx+dy*dy;
+        if(d2<22500){var d=Math.sqrt(d2);p.x+=dx/d*.5;p.y+=dy/d*.5;}
+      }
+      ctx.beginPath();
+      ctx.arc(p.x,p.y,p.r,0,Math.PI*2);
+      ctx.fillStyle='rgba('+p.c+',0.5)';
+      ctx.fill();
+      // 连线
+      for(var j=i+1;j<parts.length;j++){
+        var q=parts[j],dx=p.x-q.x,dy=p.y-q.y,d2=dx*dx+dy*dy;
+        if(d2<14400){
+          ctx.beginPath();ctx.moveTo(p.x,p.y);ctx.lineTo(q.x,q.y);
+          ctx.strokeStyle='rgba('+p.c+','+(0.14*(1-d2/14400))+')';
+          ctx.lineWidth=.7;ctx.stroke();
+        }
+      }
+    }
+    requestAnimationFrame(tick);
+  }
+  window.addEventListener('resize',resize);
+  window.addEventListener('mousemove',function(e){mouse.x=e.clientX;mouse.y=e.clientY;});
+  window.addEventListener('mouseout',function(){mouse.x=mouse.y=null;});
+  resize();requestAnimationFrame(tick);
+})();
+
+// ── 运行时长 ──
+(function(){
+  var el=document.getElementById('uptime');
+  var start=Date.now();
+  setInterval(function(){
+    var s=Math.floor((Date.now()-start)/1000);
+    var h=Math.floor(s/3600),m=Math.floor(s%3600/60),sec=s%60;
+    el.textContent='SESSION '+String(h).padStart(2,'0')+':'+String(m).padStart(2,'0')+':'+String(sec).padStart(2,'0')+' · CLOUDFLARE EDGE';
+  },1000);
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,165 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>📊 新因子验证报告</title>
+<style>
+:root{--bg:#0b0e14;--card:#12161f;--line:#1e2532;--txt:#dbe2ee;--dim:#7c8798;--up:#34d399;--down:#f87171;--acc:#38bdf8;--warn:#fbbf24;--danger:#ef4444;--purple:#a78bfa;--radius:10px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:var(--bg);color:var(--txt);font-family:-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;font-size:13px;line-height:1.6;padding:20px}
+h1{font-size:20px;margin-bottom:4px}
+h2{font-size:16px;margin:24px 0 10px;color:var(--acc)}
+.sub{color:var(--dim);font-size:12px;margin-bottom:16px}
+.kpi-row{display:flex;gap:8px;margin-bottom:16px;flex-wrap:wrap}
+.kpi{flex:1;min-width:140px;background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:14px;text-align:center}
+.kpi .label{font-size:11px;color:var(--dim);margin-bottom:4px}
+.kpi .val{font-size:22px;font-weight:700}
+.kpi .val.good{color:var(--up)}.kpi .val.bad{color:var(--down)}.kpi .val.mid{color:var(--warn)}
+table{width:100%;border-collapse:collapse;margin-bottom:20px;background:var(--card);border-radius:var(--radius);overflow:hidden}
+th{background:#141a26;color:var(--dim);font-weight:600;text-align:left;padding:10px 12px;font-size:12px}
+td{padding:9px 12px;border-top:1px solid var(--line);font-size:12px}
+tr.best td{background:rgba(16,185,129,.06)}
+tr.worst td{background:rgba(239,68,68,.06)}
+.bar-wrap{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:20px}
+.bar-row{display:flex;align-items:center;margin:6px 0;font-size:12px}
+.bar-label{width:150px;text-align:right;color:var(--dim);padding-right:10px;flex-shrink:0}
+.bar-track{flex:1;height:18px;background:rgba(255,255,255,.04);border-radius:4px;overflow:hidden;position:relative}
+.bar-fill{height:100%;border-radius:4px;min-width:2px}
+.bar-val{width:90px;padding-left:10px;flex-shrink:0;font-family:monospace}
+.pos{background:linear-gradient(90deg,#059669,#10b981)}
+.neg{background:linear-gradient(90deg,#b91c1c,#ef4444)}
+.zero{background:#64748b}
+.foot{color:var(--dim);font-size:11px;margin-top:20px;padding-top:12px;border-top:1px solid var(--line);line-height:1.8}
+.badge{display:inline-block;padding:2px 8px;border-radius:5px;font-size:11px;margin-left:6px}
+.badge-good{background:rgba(16,185,129,.15);color:var(--up);border:1px solid rgba(16,185,129,.3)}
+.badge-warn{background:rgba(245,158,11,.15);color:var(--warn);border:1px solid rgba(245,158,11,.3)}
+.badge-bad{background:rgba(239,68,68,.15);color:var(--down);border:1px solid rgba(239,68,68,.3)}
+.note{background:rgba(59,130,246,.07);border:1px solid rgba(59,130,246,.2);border-radius:var(--radius);padding:12px 16px;font-size:12px;color:#93c5fd;margin-bottom:16px}
+.chain-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:16px;margin-bottom:16px}
+.chain-card h3{font-size:14px;margin-bottom:10px;color:var(--acc)}
+</style>
+</head>
+<body>
+<h1>📊 新因子验证报告：回测 + 链上交叉验证</h1>
+<div class="sub">回测：backtest_binance_30d.json（530 币 × 100 天，滚动 60 天）· 链上：Dune API（BONK 案例交叉验证）· 2026-08-08</div>
+
+<div class="note">⚠️ 回测窗口处于下跌市（全市场 fwd5 基准 -1.1%），所有因子均值偏负属正常。关键看<b>相对基准的超额</b>与<b>下行保护（dn10）</b>。</div>
+
+<h2>一、回测结果：7 个因子 vs 全市场基准（60 天滚动）</h2>
+<table>
+<thead><tr><th>因子</th><th>n</th><th>fwd3</th><th>fwd5</th><th>fwd10</th><th>胜率5</th><th>dn10(5日)</th><th>相对基准 fwd5</th><th>判定</th></tr></thead>
+<tbody id="backtest-body"></tbody>
+</table>
+
+<h2>二、逐日面板分析 + 显著性检验（关键！）</h2>
+<div class="note">⚠️ 均值回测有陷阱：个别日期大量命中会扭曲全局均值。这里按<b>每个交易日</b>算"命中组当日均值 vs 全市场当日均值"，再做配对 t 检验——只有超额稳定复现的因子才可信。</div>
+<table>
+<thead><tr><th>因子</th><th>超额(日均)</th><th>t值</th><th>事件日</th><th>跑赢天数</th><th>显著性</th><th>判定</th></tr></thead>
+<tbody id="sig-body"></tbody>
+</table>
+
+<h2>三、下行保护（dn10：5日跌超10%概率，越低越安全）</h2>
+<div class="bar-wrap" id="bar-dn10"></div>
+
+<h2>四、链上交叉验证（Dune API · BONK 案例）</h2>
+<div class="chain-card">
+<h3>🎯 验证对象：1000BONK（下跌洗盘因子命中币）</h3>
+<p><b>Dune 查询</b>：solana_utils.latest_balances → BONK mint 持仓 Top 地址</p>
+<table>
+<thead><tr><th>指标</th><th>数值</th><th>解读</th></tr></thead>
+<tbody>
+<tr><td>Top10 持仓合计</td><td>33.94T BONK</td><td>占流通量 ~49.3%</td></tr>
+<tr><td>近期活跃（7月后）</td><td>5 个地址 / 19.23T</td><td>占流通 27.9%——大户在动</td></tr>
+<tr><td>最大单地址</td><td>6.76T</td><td>占流通 ~9.8%，非交易所标签（未验证）</td></tr>
+</tbody>
+</table>
+<p class="dim" style="margin-top:8px">⚠️ 局限：labels.addresses 对 Solana 地址需要 varbinary 格式，直接字符串查询失败；Top 地址是否交易所/做市商未完全确认。链上结论仅作方向性参考，非最终证据。</p>
+</div>
+
+<h2>四、结论与建议</h2>
+<div class="chain-card">
+<table>
+<thead><tr><th>因子</th><th>回测表现</th><th>建议</th></tr></thead>
+<tbody>
+<tr class="best"><td>🧠 SM流出（sm_flow_neg）</td><td>fwd5 -0.6%（基准 -1.1%），dn10 11.4%</td><td><span class="badge badge-good">可接入</span> 作为"跌透"信号，或反向排除</td></tr>
+<tr class="best"><td>🎯 流动性测试</td><td>dn10 7.5%（全场最低）</td><td><span class="badge badge-good">可接入</span> 下行保护强，但均值无超额</td></tr>
+<tr><td>📉 下跌洗盘</td><td>fwd5 -1.3%，dn10 15.2%（接近基准）</td><td><span class="badge badge-warn">观察</span> 无显著超额，但覆盖现有盲区</td></tr>
+<tr><td>⬅️ 横盘吸筹</td><td>fwd5 -1.8%，dn10 13.0%</td><td><span class="badge badge-warn">与既有硬门槛重叠</span></td></tr>
+<tr><td>🧠 SM流入</td><td>fwd5 -1.1%，dn10 12.9%</td><td><span class="badge badge-warn">无优势</span> 流入≠立即涨</td></tr>
+<tr class="worst"><td>🧱 套牢盘密</td><td>fwd5 -2.2%，dn10 18.1%</td><td><span class="badge badge-bad">反向信号</span> 应作排除，不是候选</td></tr>
+<tr><td>🔀 多空双开</td><td>样本仅 69</td><td><span class="badge badge-warn">样本不足</span> 不可靠</td></tr>
+</tbody>
+</table>
+</div>
+
+<div class="foot">
+<b>核心发现</b>：<br>
+① <b>SM 流出是最佳因子</b>——聪明钱撤退的币相对抗跌（可能已跌透），fwd5 优于基准 0.5pp，dn10 低 5.5pp<br>
+② <b>流动性测试的下行保护最强</b>（dn10 7.5% vs 16.9%）——反复测试的位置确实有支撑，但"画门后突破"不成立（均值无超额）<br>
+③ <b>套牢盘密集是反向信号</b>——上方套牢=继续跌，应加进排除层而不是候选层<br>
+④ 所有因子在下跌市均为负期望——<b>环境仍是决定性变量</b>（与既有验证一致）<br>
+⑤ 链上验证受 Dune 免费版限制（私有查询槽位满、Solana 地址标签格式），仅完成 BONK 单案例的方向性验证<br>
+<br>
+仅供研究参考，不构成投资建议。回测未含交易成本/滑点/资金费。
+</div>
+
+<script>
+var BACKTEST = {
+  baseline: {"fwd3": -0.0067, "fwd5": -0.0111, "fwd10": -0.0128, "win5": 38.2, "dn10": 16.9},
+  factors: [
+    {"name":"🧠 SM流出","key":"sm_flow_neg","n":4325,"fwd3":0.0,"fwd5":-0.006,"fwd10":-0.004,"win":37.4,"dn10":11.4,"verdict":"best","note":"相对最佳"},
+    {"name":"📉 下跌洗盘","key":"down_wash","n":7596,"fwd3":-0.004,"fwd5":-0.013,"fwd10":-0.018,"win":38.9,"dn10":15.2,"verdict":"warn","note":"接近基准"},
+    {"name":"⬅️ 横盘吸筹","key":"horizontal","n":16838,"fwd3":-0.013,"fwd5":-0.018,"fwd10":-0.019,"win":35.5,"dn10":13.0,"verdict":"warn","note":"与硬门槛重叠"},
+    {"name":"🧠 SM流入","key":"sm_flow_pos","n":3336,"fwd3":-0.011,"fwd5":-0.011,"fwd10":-0.007,"win":33.9,"dn10":12.9,"verdict":"warn","note":"无优势"},
+    {"name":"🎯 流动性测试","key":"liquidity_test","n":3080,"fwd3":-0.011,"fwd5":-0.017,"fwd10":-0.020,"win":31.6,"dn10":7.5,"verdict":"best","note":"dn10最强"},
+    {"name":"🔀 多空双开","key":"dual_open","n":69,"fwd3":-0.017,"fwd5":-0.019,"fwd10":-0.044,"win":33.3,"dn10":7.2,"verdict":"warn","note":"样本太小"},
+    {"name":"🧱 套牢盘密","key":"trapped_dense","n":496,"fwd3":-0.016,"fwd5":-0.022,"fwd10":-0.011,"win":32.3,"dn10":18.1,"verdict":"bad","note":"反向信号"}
+  ]
+};
+function pct(x){return (x*100).toFixed(1)+'%';}
+// 回测表
+(function(){
+  var b = BACKTEST.baseline;
+  var H = '<tr><td><b>全市场基准</b></td><td>—</td><td>'+pct(b.fwd3)+'</td><td>'+pct(b.fwd5)+'</td><td>'+pct(b.fwd10)+'</td><td>'+b.win+'%</td><td>'+b.dn10+'%</td><td>—</td><td>—</td></tr>';
+  BACKTEST.factors.forEach(function(f){
+    var rel = f.fwd5 - b.fwd5;
+    var badge = f.verdict==='best' ? '<span class="badge badge-good">'+f.note+'</span>' : (f.verdict==='bad' ? '<span class="badge badge-bad">'+f.note+'</span>' : '<span class="badge badge-warn">'+f.note+'</span>');
+    var cls = f.verdict==='best' ? 'best' : (f.verdict==='bad' ? 'worst' : '');
+    H += '<tr class="'+cls+'"><td>'+f.name+'</td><td>'+f.n+'</td><td>'+pct(f.fwd3)+'</td><td>'+pct(f.fwd5)+'</td><td>'+pct(f.fwd10)+'</td><td>'+f.win+'%</td><td>'+f.dn10+'%</td><td>'+(rel>0?'+':'')+(rel*100).toFixed(1)+'%</td><td>'+badge+'</td></tr>';
+  });
+  document.getElementById('backtest-body').innerHTML = H;
+})();
+// 显著性表
+(function(){
+  var rows = [
+    {name:"🧠 SM流出", excess:"+1.53pp", t:2.23, n:59, beat:32, sig:"✅", verdict:"显著超额", cls:"best"},
+    {name:"🧠 SM流入", excess:"+0.67pp", t:0.89, n:59, beat:27, sig:"❌", verdict:"不显著", cls:""},
+    {name:"🎯 流动性测试", excess:"+0.69pp", t:0.63, n:31, beat:13, sig:"❌", verdict:"不显著", cls:""},
+    {name:"📉 下跌洗盘", excess:"-0.24pp", t:-1.33, n:59, beat:26, sig:"❌", verdict:"不显著", cls:""},
+    {name:"🔀 多空双开", excess:"+0.24pp", t:0.31, n:16, beat:7, sig:"❌", verdict:"样本不足", cls:""},
+    {name:"🧱 套牢盘密", excess:"-2.58pp", t:-1.51, n:21, beat:10, sig:"❌", verdict:"不显著(偏负)", cls:"worst"},
+    {name:"⬅️ 横盘吸筹", excess:"-0.63pp", t:-3.15, n:59, beat:19, sig:"✅", verdict:"显著跑输", cls:"worst"}
+  ];
+  var H = '';
+  rows.forEach(function(r){
+    H += '<tr class="'+r.cls+'"><td>'+r.name+'</td><td>'+r.excess+'</td><td>'+r.t+'</td><td>'+r.n+'</td><td>'+r.beat+'/'+r.n+'</td><td>'+r.sig+'</td><td>'+r.verdict+'</td></tr>';
+  });
+  document.getElementById('sig-body').innerHTML = H;
+})();
+// dn10 条形图
+(function(){
+  var items = BACKTEST.factors.slice().sort(function(a,b){return a.dn10-b.dn10;});
+  var maxAbs = Math.max.apply(null, items.map(function(i){return i.dn10;}).concat([BACKTEST.baseline.dn10]));
+  var H = '';
+  items.forEach(function(it){
+    var w = it.dn10/maxAbs*100;
+    var cls = it.dn10 < BACKTEST.baseline.dn10*0.6 ? 'pos' : (it.dn10 > BACKTEST.baseline.dn10 ? 'neg' : 'zero');
+    H += '<div class="bar-row"><div class="bar-label">'+it.name+'</div><div class="bar-track"><div class="bar-fill '+cls+'" style="width:'+w+'%"></div></div><div class="bar-val">'+it.dn10+'%</div></div>';
+  });
+  H += '<div class="bar-row"><div class="bar-label" style="color:#fbbf24">全市场基准</div><div class="bar-track"><div class="bar-fill zero" style="width:'+(BACKTEST.baseline.dn10/maxAbs*100)+'%"></div></div><div class="bar-val">'+BACKTEST.baseline.dn10+'%</div></div>';
+  document.getElementById('bar-dn10').innerHTML = H;
+})();
+</script>
+</body>
+</html>

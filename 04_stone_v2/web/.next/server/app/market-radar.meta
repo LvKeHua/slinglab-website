@@ -1,0 +1,15 @@
+{
+  "headers": {
+    "x-nextjs-stale-time": "300",
+    "x-nextjs-prerender": "1",
+    "x-next-cache-tags": "_N_T_/layout,_N_T_/market-radar/layout,_N_T_/market-radar/page,_N_T_/market-radar"
+  },
+  "segmentPaths": [
+    "/_tree",
+    "/_full",
+    "/market-radar/__PAGE__",
+    "/market-radar",
+    "/_index",
+    "/_head"
+  ]
+}

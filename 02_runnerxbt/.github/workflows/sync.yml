@@ -1,0 +1,107 @@
+name: RunnerXBT Auto Sync
+
+on:
+  schedule:
+    - cron: '5 * * * *'
+  workflow_dispatch:
+
+concurrency:
+  group: runnerxbt-sync
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install dependencies
+        run: pip install telethon requests
+
+      - name: Restore Telegram session
+        env:
+          TG_SESSION_B64: ${{ secrets.TG_SESSION_B64 }}
+        run: |
+          echo "$TG_SESSION_B64" | base64 -d > scraper/tg_session.session
+          ls -la scraper/tg_session.session
+
+      - name: Sync Telegram messages
+        run: python -u scraper/sync_telegram.py 2>&1 | tail -20
+
+      - name: Sync K-lines from OKX
+        run: python -u scraper/sync_klines_okx.py 2>&1 | tail -10
+
+      - name: Merge messages
+        run: python -u merge_messages.py
+
+      - name: Build self-contained HTML
+        run: python -u build_v2.py 2>&1 | tail -10
+
+      - name: Inject frontend features
+        run: |
+          python -u inject_v2.py 2>&1 | tail -3
+          python -u inject_ux2.py 2>&1 | tail -3
+          python -u inject_ux3.py 2>&1 | tail -3
+          python -u inject_ux4.py 2>&1 | tail -3
+
+      - name: Refresh Cloudflare OAuth token
+        id: cfauth
+        env:
+          CF_REFRESH_TOKEN: ${{ secrets.CF_REFRESH_TOKEN }}
+          CF_CLIENT_ID: ${{ secrets.CF_CLIENT_ID }}
+        run: |
+          RESP=$(curl -s -X POST "https://dash.cloudflare.com/oauth2/token" \
+            -d "grant_type=refresh_token&refresh_token=${CF_REFRESH_TOKEN}&client_id=${CF_CLIENT_ID}")
+          ACCESS_TOKEN=$(echo "$RESP" | python -c "import json,sys; print(json.load(sys.stdin).get('access_token',''))")
+          NEW_REFRESH=$(echo "$RESP" | python -c "import json,sys; print(json.load(sys.stdin).get('refresh_token',''))")
+          echo "access_token=${ACCESS_TOKEN}" >> "$GITHUB_OUTPUT"
+          echo "new_refresh=${NEW_REFRESH}" >> "$GITHUB_OUTPUT"
+          if [ -z "$ACCESS_TOKEN" ]; then
+            echo "::error::CF OAuth refresh failed"
+            exit 1
+          fi
+
+      - name: Deploy to Cloudflare Pages
+        env:
+          CLOUDFLARE_API_TOKEN: ${{ steps.cfauth.outputs.access_token }}
+        run: npx --yes wrangler@4 pages deploy deploy_v2 --project-name runnerxbt --branch main --commit-dirty=true 2>&1 | tail -6
+
+      - name: Update refresh token secret
+        if: steps.cfauth.outputs.new_refresh != ''
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+          NEW_REFRESH: ${{ steps.cfauth.outputs.new_refresh }}
+        run: |
+          ENC=$(curl -s -H "Authorization: token ${GH_TOKEN}" \
+            "https://api.github.com/repos/LvKeHua/runnerxbt-insights/actions/secrets/public-key")
+          KEY_ID=$(echo "$ENC" | python -c "import json,sys; print(json.load(sys.stdin).get('key_id',''))")
+          KEY=$(echo "$ENC" | python -c "import json,sys; print(json.load(sys.stdin).get('key',''))")
+          echo "$NEW_REFRESH" > /tmp/secret_value.txt
+          echo "$KEY" > /tmp/key.txt
+          pip install pynacl
+          ENC_VALUE=$(python -c "import base64; from nacl import encoding, public; k=public.PublicKey(base64.b64decode(open('/tmp/key.txt').read())); s=public.SealedBox(k).encrypt(open('/tmp/secret_value.txt','rb').read()); print(base64.b64encode(s).decode())")
+          curl -s -X PUT -H "Authorization: token ${GH_TOKEN}" \
+            "https://api.github.com/repos/LvKeHua/runnerxbt-insights/actions/secrets/CF_REFRESH_TOKEN" \
+            -d "{\"encrypted_value\":\"${ENC_VALUE}\",\"key_id\":\"${KEY_ID}\"}"
+
+      - name: Push back synced data
+        env:
+          GH_TOKEN: ${{ secrets.GH_TOKEN }}
+        run: |
+          git config user.name "RunnerXBT Sync"
+          git config user.email "sync@runnerxbt.local"
+          git add data/messages_telethon.json data/messages_final.json data/btc_ohlcv_1d.json data/eth_ohlcv_1d.json data/btc_ohlcv_4h.json data/media/ 2>/dev/null || true
+          if git diff --cached --quiet; then
+            echo "No data changes"
+          else
+            git commit -m "sync: update data $(date -u +%Y-%m-%dT%H:%M)"
+            git push origin HEAD:master
+          fi

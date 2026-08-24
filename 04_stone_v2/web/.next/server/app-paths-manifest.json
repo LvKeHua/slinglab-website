@@ -1,0 +1,22 @@
+{
+  "/_global-error/page": "app/_global-error/page.js",
+  "/_not-found/page": "app/_not-found/page.js",
+  "/accounts/page": "app/accounts/page.js",
+  "/analytics/page": "app/analytics/page.js",
+  "/calendar/page": "app/calendar/page.js",
+  "/favicon.ico/route": "app/favicon.ico/route.js",
+  "/funding-heatmap/page": "app/funding-heatmap/page.js",
+  "/intelligence/page": "app/intelligence/page.js",
+  "/journal/page": "app/journal/page.js",
+  "/market-radar/page": "app/market-radar/page.js",
+  "/page": "app/page.js",
+  "/performance/page": "app/performance/page.js",
+  "/portfolio/page": "app/portfolio/page.js",
+  "/positions/page": "app/positions/page.js",
+  "/reporting/page": "app/reporting/page.js",
+  "/scorecards/page": "app/scorecards/page.js",
+  "/settings/page": "app/settings/page.js",
+  "/strategies/page": "app/strategies/page.js",
+  "/trades/page": "app/trades/page.js",
+  "/wallets/page": "app/wallets/page.js"
+}

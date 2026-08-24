@@ -1,0 +1,345 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>绛圭爜鐪熺┖ 路 浠ｅ竵绛涢€夊櫒</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{background:#f4f6fa;color:#1a2332;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;padding:16px}
+.app-header{background:linear-gradient(135deg,#fff 0,#f0f4fe 100%);border:1px solid #e2e8f0;border-radius:16px;padding:20px 28px;margin-bottom:16px}
+.app-header h1{font-size:1.4rem;color:#111}
+.app-header p{font-size:.85rem;color:#6b7280;margin-top:4px}
+.layout{display:flex;gap:16px}
+.sidebar{width:280px;flex-shrink:0}
+.main{flex:1;min-width:0}
+.filter-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:14px;margin-bottom:12px}
+.filter-card .label{font-size:.7rem;font-weight:600;color:#64748b;text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px}
+.filter-card input[type=range]{width:100%;margin:6px 0}
+.filter-card .range-labels{display:flex;justify-content:space-between;font-size:.75rem;color:#6b7280}
+.filter-card .input-row{display:flex;gap:8px;align-items:center;margin-bottom:6px}
+.filter-card .input-row .filter-input{flex:1;padding:4px 8px;border:1px solid #d1d5db;border-radius:6px;font-size:.8rem;width:0;min-width:0;text-align:center;background:#fff}
+.filter-card .input-row .filter-input:focus{border-color:#2563eb;outline:none;box-shadow:0 0 0 2px rgba(37,99,235,.2)}
+.filter-card .input-row .range-sep{color:#9ca3af;font-size:.85rem;flex-shrink:0}
+.preset-row{display:flex;gap:8px;margin-bottom:12px}
+.preset-btn{flex:1;padding:8px 12px;border:none;border-radius:8px;font-weight:600;font-size:.8rem;cursor:pointer;color:#fff;transition:.15s}
+.preset-btn:hover{transform:translateY(-1px);box-shadow:0 4px 12px rgba(0,0,0,.1)}
+.preset-a{background:linear-gradient(135deg,#dc2626,#b91c1c)}
+.preset-b{background:linear-gradient(135deg,#e67e22,#d97706)}
+.kpi-row{display:flex;gap:12px;margin-bottom:12px}
+.kpi-card{flex:1;background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:12px 14px;text-align:center}
+.kpi-card .kpi-label{font-size:.7rem;color:#6b7280;font-weight:500}
+.kpi-card .kpi-value{font-size:1.3rem;font-weight:700;color:#111;margin-top:2px}
+.table-wrap{background:#fff;border:1px solid #e2e8f0;border-radius:10px;overflow:hidden;margin-bottom:12px}
+.table-wrap .table-title{padding:12px 14px;font-weight:600;font-size:.9rem;border-bottom:1px solid #e2e8f0}
+.table-scroll{overflow-x:auto}
+table{width:100%;border-collapse:collapse;font-size:.78rem;white-space:nowrap}
+th{background:#f8fafc;color:#374151;font-weight:600;font-size:.7rem;text-transform:uppercase;letter-spacing:.3px;padding:8px 10px;border-bottom:2px solid #e2e8f0;cursor:pointer;user-select:none}
+th:hover{background:#eef2f7}
+td{padding:6px 10px;border-bottom:1px solid #f1f5f9;color:#1f2937}
+tr.momentum{background:#d1fae5!important}
+tr.momentum td{color:#065f46;font-weight:500}
+tr.star5{background:#fefce8!important}
+tr.star5 td{color:#92400e}
+.empty-msg{text-align:center;padding:32px;color:#9ca3af}
+.btn{background:#2563eb;color:#fff;border:none;border-radius:6px;padding:6px 14px;font-size:.8rem;cursor:pointer}
+.btn:hover{background:#1d4ed8}
+.refresh-btn{width:100%;padding:8px;background:#2563eb;color:#fff;border:none;border-radius:8px;font-weight:600;font-size:.8rem;cursor:pointer;margin-top:8px}
+.refresh-btn:hover{background:#1d4ed8}
+.status-bar{display:flex;justify-content:space-between;align-items:center;padding:8px 14px;background:#f0f4fe;border-radius:8px;font-size:.75rem;color:#1e40af;margin-bottom:12px}
+.calc-card{background:#fff;border:1px solid #e2e8f0;border-radius:10px;padding:16px;margin-bottom:12px}
+.calc-card h3{font-size:.9rem;margin-bottom:8px}
+.calc-row{display:flex;gap:12px;margin:8px 0}
+.calc-row input{flex:1;padding:6px 10px;border:1px solid #d1d5db;border-radius:6px;font-size:.85rem}
+.calc-result{background:#f0f4fe;border-radius:8px;padding:10px 14px;font-weight:600;color:#1e40af;font-size:.85rem;margin:8px 0}
+.footer{text-align:center;color:#9ca3af;font-size:.7rem;padding:12px 0}
+@media(max-width:768px){.layout{flex-direction:column}.sidebar{width:100%}}
+</style>
+</head>
+<body>
+<div id="root">鈿?鍔犺浇涓?..</div>
+<script>
+let fullData = [];
+let filtered = [];
+let sortCol = 'star_rating';
+let sortAsc = false;
+let presetActive = '';
+let lastUpdated = '';
+
+let mcapMin = 15000000, mcapMax = 500000000000;
+let crMin = 0, crMax = 100;
+let minAmp = 0, minR7 = -100;
+
+async function load() {
+  try {
+    const r = await fetch('/api/data');
+    const d = await r.json();
+    if (!d.ok) throw new Error(d.error);
+    fullData = d.data;
+    lastUpdated = d.updated;
+    filtered = [...fullData];
+    applyPreset();
+    render();
+  } catch(e) {
+    document.getElementById('root').innerHTML = '<div class="empty-msg">⚠️ 加载失败: '+e.message+'<br><br><button class="btn" onclick="load()">重试</button></div>';
+  }
+}
+}
+
+function setPreset(p) {
+  presetActive = p;
+  if (p === 'A') { mcapMin = 15000000; mcapMax = 100000000; crMin = 0; crMax = 30; minAmp = 0; minR7 = -100; }
+  else if (p === 'B') { mcapMin = 15000000; mcapMax = 50000000; crMin = 98; crMax = 100; minAmp = 0; minR7 = -100; }
+  syncSliders();
+  apply();
+}
+
+function syncSliders() {
+  const s = id => document.getElementById(id);
+  s('mcap-min').value = mcapMin / 1000000;
+  s('mcap-max').value = mcapMax / 1000000;
+  s('cr-min').value = crMin; s('cr-max').value = crMax;
+  s('amp').value = minAmp; s('r7').value = minR7;
+  s('mcap-min-i').value = Math.round(mcapMin / 1000000);
+  s('mcap-max-i').value = Math.round(mcapMax / 1000000);
+  s('cr-min-i').value = crMin; s('cr-max-i').value = crMax;
+  s('amp-i').value = minAmp; s('r7-i').value = minR7;
+}
+
+function apply() {
+  const s = id => document.getElementById(id);
+  mcapMin = +s('mcap-min').value * 1000000;
+  mcapMax = +s('mcap-max').value * 1000000;
+  crMin = +s('cr-min').value; crMax = +s('cr-max').value;
+  minAmp = +s('amp').value; minR7 = +s('r7').value;
+  syncInputs();
+  applyFilters();
+}
+
+function syncInputs() {
+  const s = id => document.getElementById(id);
+  const mi = s('mcap-min-i'), ma = s('mcap-max-i');
+  if (mi) mi.value = Math.round(mcapMin / 1000000);
+  if (ma) ma.value = Math.round(mcapMax / 1000000);
+  const ci = s('cr-min-i'), ca = s('cr-max-i');
+  if (ci) ci.value = crMin; if (ca) ca.value = crMax;
+  const ai = s('amp-i'); if (ai) ai.value = minAmp;
+  const ri = s('r7-i'); if (ri) ri.value = minR7;
+}
+
+function onInputChange(group) {
+  const s = id => document.getElementById(id);
+  if (group === 'mcap') {
+    let min = +s('mcap-min-i').value || 15;
+    let max = +s('mcap-max-i').value || 500000;
+    if (min > max) { let t = min; min = max; max = t; }
+    if (min < 1) min = 1;
+    mcapMin = min * 1000000; mcapMax = max * 1000000;
+  } else if (group === 'cr') {
+    let min = +s('cr-min-i').value || 0;
+    let max = +s('cr-max-i').value || 100;
+    if (min > max) { let t = min; min = max; max = t; }
+    if (min < 0) min = 0; if (max > 100) max = 100;
+    crMin = min; crMax = max;
+  } else if (group === 'amp') {
+    minAmp = Math.min(Math.max(+s('amp-i').value || 0, 0), 100);
+  } else if (group === 'r7') {
+    minR7 = Math.max(+s('r7-i').value || -100, -100);
+    if (minR7 > 500) minR7 = 500;
+  }
+  syncSliders();
+  applyFilters();
+}
+
+function applyPreset() { applyFilters(); }
+
+function applyFilters() {
+  const crMinDec = crMin / 100;
+  const crMaxDec = crMax / 100;
+  filtered = fullData.filter(r => {
+    if (r.market_cap == null || r.market_cap < mcapMin || r.market_cap > mcapMax) return false;
+    const cr = r.circulating_ratio != null ? r.circulating_ratio : 1;
+    if (cr < crMinDec || cr > crMaxDec) return false;
+    if ((r.amplitude_24h_pct ?? 0) < minAmp) return false;
+    if ((r.percent_change_7d ?? -999) < minR7) return false;
+    return true;
+  });
+  if (presetActive === 'A') {
+    filtered.sort((a,b) => (a.circulating_ratio ?? 1) - (b.circulating_ratio ?? 1));
+  } else if (presetActive === 'B') {
+    filtered.sort((a,b) => (b.percent_change_7d ?? -999) - (a.percent_change_7d ?? -999));
+  } else {
+    filtered.sort((a,b) => {
+      const av = a[sortCol] ?? 0, bv = b[sortCol] ?? 0;
+      return sortAsc ? (av > bv ? 1 : -1) : (av < bv ? 1 : -1);
+    });
+  }
+  render();
+}
+
+function sortBy(col) {
+  if (sortCol === col) sortAsc = !sortAsc;
+  else { sortCol = col; sortAsc = false; }
+  presetActive = '';
+  applyFilters();
+}
+
+function render() {
+  const root = document.getElementById('root');
+  const pos7d = filtered.filter(r => (r.percent_change_7d ?? -999) > 0).length;
+  const posPct = filtered.length > 0 ? (pos7d / filtered.length * 100).toFixed(1) : '0.0';
+  const avgS = filtered.length > 0 ? (filtered.reduce((s,r) => s + r.star_rating, 0) / filtered.length).toFixed(2) : '0.00';
+  const alertN = filtered.filter(r => r.momentum_alert).length;
+
+  let rows = '';
+  for (const r of filtered) {
+    const cls = r.momentum_alert ? 'class="momentum"' : (r.star_rating >= 5 ? 'class="star5"' : '');
+    rows += '<tr '+cls+'>'
+      + '<td>'+r.symbol+'</td>'
+      + '<td>'+(r.name || r.base_asset)+'</td>'
+      + '<td>'+fmtPrice(r.price)+'</td>'
+      + '<td>'+fmtLarge(r.market_cap)+'</td>'
+      + '<td>'+fmtRatio(r.circulating_ratio)+'</td>'
+      + '<td>'+fmtPct(r.percent_change_7d)+'</td>'
+      + '<td>'+fmtPct(r.change_24h_pct)+'</td>'
+      + '<td>'+fmtPct(r.amplitude_24h_pct)+'</td>'
+      + '<td>'+fmtLarge(r.volume_24h_usdt)+'</td>'
+      + '<td>'+fmtStars(r.star_rating)+'</td>'
+      + '<td>'+r.unlock_risk+'</td>'
+      + '</tr>';
+  }
+
+  root.innerHTML = 
+<div class="app-header">
+  <h1>馃敩 绛圭爜鐪熺┖ 路 浠ｅ竵绛涢€夊櫒</h1>
+  <p>灏忚祫閲戠櫨鍊嶆綔鍔涙寲鎺?鈥?浣庢祦閫?/ 鍏ㄦ祦閫氬皬甯傚€?鈥?鏁版嵁婧? CoinGecko</p>
+</div>
+<div class="status-bar">
+  <span>馃搳 鍏ㄩ儴鍙氦鏄? {fullData.length}  路  绛涢€夊懡涓? {filtered.length}</span>
+  <span>馃晲 鏈€鍚庢洿鏂? </span>
+</div>
+<div class="layout">
+<div class="sidebar">
+  <div class="preset-row">
+    <button class="preset-btn preset-a" onclick="setPreset('A')">馃敶 Preset A 路 缃伅娴?/button>
+    <button class="preset-btn preset-b" onclick="setPreset('B')">馃煛 Preset B 路 鍏ㄦ祦閫?/button>
+  </div>
+  <button class="btn" style="width:100%;margin-bottom:12px;background:#6b7280" onclick="setPreset('');syncSliders();apply()">娓呴櫎绛涢€?/button>
+  <div class="filter-card">
+    <div class="label">馃拵 甯傚€艰寖鍥?(鐧句竾$)</div>
+    <div class="input-row">
+      <input type="number" id="mcap-min-i" class="filter-input" value="15" min="1" max="500000" step="1" placeholder="鏈€灏? onchange="onInputChange('mcap')">
+      <span class="range-sep">~</span>
+      <input type="number" id="mcap-max-i" class="filter-input" value="500000" min="1" max="500000" step="1" placeholder="鏈€澶? onchange="onInputChange('mcap')">
+    </div>
+    <input type="range" id="mcap-min" min="1" max="5000" value="15" oninput="apply()">
+    <input type="range" id="mcap-max" min="1" max="500000" value="500000" oninput="apply()">
+  </div>
+  <div class="filter-card">
+    <div class="label">馃摝 娴侀€氱巼鑼冨洿 (%)</div>
+    <div class="input-row">
+      <input type="number" id="cr-min-i" class="filter-input" value="0" min="0" max="100" step="1" placeholder="鏈€灏? onchange="onInputChange('cr')">
+      <span class="range-sep">~</span>
+      <input type="number" id="cr-max-i" class="filter-input" value="100" min="0" max="100" step="1" placeholder="鏈€澶? onchange="onInputChange('cr')">
+    </div>
+    <input type="range" id="cr-min" min="0" max="100" value="0" oninput="apply()">
+    <input type="range" id="cr-max" min="0" max="100" value="100" oninput="apply()">
+  </div>
+  <div class="filter-card">
+    <div class="label">馃搱 鍔ㄩ噺杩囨护</div>
+    <div style="font-size:.75rem;margin-bottom:4px">鏈€浣?24h 鎸箙 (%)</div>
+    <div class="input-row" style="margin-bottom:2px">
+      <input type="number" id="amp-i" class="filter-input" value="0" min="0" max="100" step="1" placeholder="0" onchange="onInputChange('amp')">
+    </div>
+    <input type="range" id="amp" min="0" max="100" value="0" oninput="apply()">
+    <div style="font-size:.75rem;margin:6px 0 4px">鏈€浣?7鏃ユ定骞?(%)</div>
+    <div class="input-row" style="margin-bottom:2px">
+      <input type="number" id="r7-i" class="filter-input" value="-100" min="-100" max="500" step="1" placeholder="-100" onchange="onInputChange('r7')">
+    </div>
+    <input type="range" id="r7" min="-100" max="500" value="-100" oninput="apply()">
+  </div>
+  <button class="refresh-btn" onclick="load()">馃攧 鍒锋柊鏁版嵁</button>
+  <div style="font-size:.65rem;color:#9ca3af;text-align:center;margin-top:6px">鏁版嵁姣?鍒嗛挓鑷姩鏇存柊</div>
+</div>
+<div class="main">
+  <div class="kpi-row">
+    <div class="kpi-card"><div class="kpi-label">馃搳 鍏ㄩ儴鍙氦鏄?/div><div class="kpi-value"></div></div>
+    <div class="kpi-card"><div class="kpi-label">馃攳 绛涢€夊懡涓?/div><div class="kpi-value"></div></div>
+    <div class="kpi-card"><div class="kpi-label">馃搱 7鏃ユ鏀剁泭</div><div class="kpi-value">%</div></div>
+    <div class="kpi-card"><div class="kpi-label">猸?骞冲潎娼滃姏</div><div class="kpi-value"></div></div>
+    <div class="kpi-card"><div class="kpi-label">馃敟 涓诲姏淇″彿</div><div class="kpi-value"></div></div>
+  </div>
+  <div class="table-wrap">
+    <div class="table-title">馃搵 绛涢€夌粨鏋?<span style="font-weight:400;font-size:.75rem;color:#6b7280;margin-left:8px">鐐瑰嚮琛ㄥご鎺掑簭 路 缁胯壊琛?涓诲姏浠嬪叆</span></div>
+    <div class="table-scroll">
+    <table>
+    <thead><tr>
+      <th onclick="sortBy('symbol')">浜ゆ槗瀵?/th>
+      <th onclick="sortBy('name')">鍚嶇О</th>
+      <th onclick="sortBy('price')">浠锋牸</th>
+      <th onclick="sortBy('market_cap')">娴侀€氬競鍊?/th>
+      <th onclick="sortBy('circulating_ratio')">娴侀€氱巼</th>
+      <th onclick="sortBy('percent_change_7d')">7鏃ユ定骞?/th>
+      <th onclick="sortBy('change_24h_pct')">24h娑ㄨ穼</th>
+      <th onclick="sortBy('amplitude_24h_pct')">24h鎸箙</th>
+      <th onclick="sortBy('volume_24h_usdt')">24h浜ゆ槗閲?/th>
+      <th onclick="sortBy('star_rating')">猸?娼滃姏</th>
+      <th>馃敁 瑙ｉ攣椋庨櫓</th>
+    </tr></thead>
+    <tbody>
+    
+    </tbody>
+    </table>
+    </div>
+  </div>
+  <div class="calc-card">
+    <h3>馃幇 璧勯噾鍒嗗竷寮忓僵绁ㄨ绠楀櫒</h3>
+    <p style="font-size:.75rem;color:#6b7280;margin-bottom:8px">灏嗘湰閲戠瓑棰濆垎閰嶈嚦璇勫垎鏈€楂樼殑 N 涓爣鐨?/p>
+    <div class="calc-row">
+      <input type="number" id="capital" value="1000" min="10" placeholder="鎬绘湰閲?($)" oninput="calcFun()">
+      <input type="number" id="npos" value="5" min="1" placeholder="涔板叆鏍囩殑鏁? oninput="calcFun()">
+    </div>
+    <div id="calc-result"></div>
+  </div>
+</div>
+</div>
+<div class="footer">
+  鈿狅笍 鏈伐鍏蜂粎渚涚爺绌跺弬鑰冿紝涓嶆瀯鎴愪换浣曟姇璧勫缓璁€?br>
+  馃晲 鏈€鍚庢洿鏂? 
+</div>;
+  calcFun();
+  syncSliders();
+}
+
+function calcFun() {
+  const el = document.getElementById('calc-result');
+  if (!el) return;
+  const capital = +document.getElementById('capital').value || 1000;
+  const npos = +document.getElementById('npos').value || 5;
+  const top = [...filtered].sort((a,b) => {
+    if (b.star_rating !== a.star_rating) return b.star_rating - a.star_rating;
+    return (a.circulating_ratio ?? 1) - (b.circulating_ratio ?? 1);
+  }).slice(0, npos);
+  if (top.length === 0) { el.innerHTML = ''; return; }
+  const alloc = capital / top.length;
+  let html = '<div class="calc-result">馃挵 鍧囦粨鍒嗛厤: $'+capital.toLocaleString()+' 鈫?'+top.length+' 涓爣鐨?鈫?姣忎釜 $'+alloc.toFixed(2)+'</div>';
+  html += '<table><thead><tr><th>鏍囩殑</th><th>浠锋牸</th><th>鍒嗛厤</th><th>鏁伴噺</th><th>猸?/th></tr></thead><tbody>';
+  for (const r of top) {
+    const qty = r.price > 0 ? alloc / r.price : 0;
+    html += '<tr><td>'+r.symbol+'</td><td>'+fmtPrice(r.price)+'</td><td>$'+alloc.toFixed(2)+'</td><td>'+qty.toFixed(6)+'</td><td>'+fmtStars(r.star_rating)+'</td></tr>';
+  }
+  html += '</tbody></table>';
+  el.innerHTML = html;
+}
+
+function fmtPrice(v) { if (v == null) return 'N/A'; if (v < 0.001) return '$'+v.toFixed(8); if (v < 1) return '$'+v.toFixed(4); return '$'+v.toFixed(2); }
+function fmtLarge(v) { if (v == null) return 'N/A'; return '$'+Number(v).toLocaleString('en-US',{maximumFractionDigits:0}); }
+function fmtPct(v) { if (v == null) return 'N/A'; return (v >= 0 ? '+' : '') + Number(v).toFixed(2) + '%'; }
+function fmtRatio(v) { if (v == null) return 'N/A'; return (v * 100).toFixed(1) + '%'; }
+function fmtStars(v) { return ['鈥?,'猸?,'猸愨瓙','猸愨瓙猸?,'猸愨瓙猸愨瓙','猸愨瓙猸愨瓙猸?][Math.min(v, 5)] || '鈥?; }
+
+// Start loading
+load();
+</script>
+</body>
+</html>

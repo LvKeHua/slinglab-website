@@ -1,0 +1,22 @@
+{
+  "/_global-error/page": "/_global-error",
+  "/_not-found/page": "/_not-found",
+  "/accounts/page": "/accounts",
+  "/analytics/page": "/analytics",
+  "/calendar/page": "/calendar",
+  "/favicon.ico/route": "/favicon.ico",
+  "/funding-heatmap/page": "/funding-heatmap",
+  "/intelligence/page": "/intelligence",
+  "/journal/page": "/journal",
+  "/market-radar/page": "/market-radar",
+  "/page": "/",
+  "/performance/page": "/performance",
+  "/portfolio/page": "/portfolio",
+  "/positions/page": "/positions",
+  "/reporting/page": "/reporting",
+  "/scorecards/page": "/scorecards",
+  "/settings/page": "/settings",
+  "/strategies/page": "/strategies",
+  "/trades/page": "/trades",
+  "/wallets/page": "/wallets"
+}

@@ -1,0 +1,15 @@
+[Unit]
+Description=Crypto Screener - Tokenomics筛选器
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/screener
+ExecStart=/usr/bin/python3 -m uvicorn backend.server:app --host 127.0.0.1 --port 8001
+Restart=always
+RestartSec=5
+Environment=PORT=8001
+
+[Install]
+WantedBy=multi-user.target
