@@ -1,0 +1,23 @@
+{
+  "run_at": "2026-08-31T08:20:35.186289+00:00",
+  "total_coins": 517,
+  "coins_with_cmc_and_cg": 277,
+  "coins_with_conflict": 12,
+  "coins_stale_cg": 2,
+  "coins_no_ratio": 202,
+  "conflict_breakdown": {
+    "33%": 1,
+    "77%": 1,
+    "41%": 1,
+    "14%": 1,
+    "18%": 1,
+    "15%": 1,
+    "35%": 1,
+    "56%": 1,
+    "47%": 1,
+    "11%": 1,
+    "17%": 1,
+    "26%": 1
+  },
+  "quality_score": 29.7
+}
