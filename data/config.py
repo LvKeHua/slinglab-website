@@ -43,7 +43,8 @@ CG_MAX_AGE_HOURS = 6
 # ── Cloudflare KV ────────────────────────────────────────
 # KV namespace ID for the dashboard
 KV_NAMESPACE_ID = "6d56b8307fd04814892f9c2b15723c02"
-KV_DATA_KEY = "data"
+# 独立 key：勿用 "data"（筹码筛选器 worker 的核心数据 key，relay 每 5 分钟覆盖）
+KV_DATA_KEY = "collector_data"
 KV_HTML_KEY = "dashboard_html"
 
 # Cloudflare API (uses env vars or direct config)
