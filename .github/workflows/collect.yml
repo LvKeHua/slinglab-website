@@ -44,20 +44,20 @@ jobs:
         run: |
           cd data
           python -c "
-import json, sys
-from reporter import push_to_kv, generate_markdown_summary
-data = json.load(open('data/merged_latest.json'))
-from validator import validate
-validated = validate(data)
-ok = push_to_kv(validated)
-if not ok:
-    print('FAILED to push to KV')
-    sys.exit(1)
-summary = generate_markdown_summary(validated)
-print(summary)
-# Save summary for later steps
-open('data/summary.md', 'w').write(summary)
-"
+          import json, sys
+          from reporter import push_to_kv, generate_markdown_summary
+          data = json.load(open('data/merged_latest.json'))
+          from validator import validate
+          validated = validate(data)
+          ok = push_to_kv(validated)
+          if not ok:
+              print('FAILED to push to KV')
+              sys.exit(1)
+          summary = generate_markdown_summary(validated)
+          print(summary)
+          # Save summary for later steps
+          open('data/summary.md', 'w').write(summary)
+          "
 
       - name: Commit snapshots
         run: |
