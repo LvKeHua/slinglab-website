@@ -11,10 +11,10 @@
 const WORKER_URL = process.env.WORKER_URL || 'https://app.slinglab.xyz/screener/api/relay-tickers';
 const AUTH_KEY = process.env.RELAY_AUTH_KEY;
 const DEMON_URL = process.env.DEMON_URL || 'https://app.slinglab.xyz/screener/api/relay-demon';
-const DEMON_RELAY_KEY = process.env.DEMON_RELAY_KEY || '0eb3f463c85e160bbedbec6b3131bb862bdd0c82ccf9f390';
+const DEMON_RELAY_KEY = process.env.DEMON_RELAY_KEY;
 // 小币筛选: 复用 DEMON 认证，relay 路径换成 /relay-coinfilter
 const COINFILTER_URL = process.env.DEMON_URL ? process.env.DEMON_URL.replace('/relay-demon', '/relay-coinfilter') : 'https://app.slinglab.xyz/screener/api/relay-coinfilter';
-const COINFILTER_RELAY_KEY = process.env.DEMON_RELAY_KEY || '0eb3f463c85e160bbedbec6b3131bb862bdd0c82ccf9f390';
+const COINFILTER_RELAY_KEY = process.env.DEMON_RELAY_KEY;
 const DEMON_MIN_VOL = 0;
 // 不再硬编码上限 — 新合约自动包含，随 Binance ticker 数量动态扩展
 const OI_CONCURRENCY = 15;
@@ -27,67 +27,99 @@ import tls from 'node:tls';
 const PROXY_URL = process.env.HTTPS_PROXY || process.env.https_proxy || process.env.HTTP_PROXY || process.env.http_proxy || null;
 
 function proxiedFetch(url, opts = {}) {
-  if (!PROXY_URL) return fetch(url, opts);
-  return new Promise((resolve, reject) => {
-    const u = new URL(url);
-    const proxy = new URL(PROXY_URL.includes('://') ? PROXY_URL : 'http://' + PROXY_URL);
-    const targetPort = u.port || (u.protocol === 'https:' ? 443 : 80);
-    let settled = false;
-    const timer = setTimeout(() => { if (!settled) { settled = true; socket.destroy(); reject(new Error('proxiedFetch timeout')); } }, opts.timeoutMs || TIMEOUT_MS);
-    const socket = net.connect(Number(proxy.port || 7897), proxy.hostname, () => {
-      socket.write(`CONNECT ${u.hostname}:${targetPort} HTTP/1.1\r\nHost: ${u.hostname}:${targetPort}\r\n\r\n`);
-    });
-    let handshake = '';
-    const done = (fn) => (v) => { if (!settled) { settled = true; clearTimeout(timer); socket.destroy(); fn(v); } };
-    socket.on('data', (d) => {
-      handshake += d.toString();
-      if (!handshake.includes('\r\n\r\n')) return;
-      if (!handshake.startsWith('HTTP/1.1 200')) {
-        return done(reject)(new Error('CONNECT failed: ' + handshake.split('\r\n')[0]));
-      }
-      socket.removeAllListeners('data');
-      const tlsSock = tls.connect({ socket, servername: u.hostname }, () => {
-        const headers = { ...(opts.headers || {}) };
-        headers['Host'] = u.hostname;
-        headers['Connection'] = 'close';
-        const body = opts.body || '';
-        if (body) headers['Content-Length'] = Buffer.byteLength(body);
-        const head = `${opts.method || 'GET'} ${u.pathname}${u.search} HTTP/1.1\r\n` +
-          Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\r\n') + '\r\n\r\n';
-        tlsSock.write(head + body);
-      });
-      let raw = '';
-      tlsSock.on('data', (c) => { raw += c; });
-      tlsSock.on('error', done(reject));
-      tlsSock.on('close', () => {
-        try {
-          const idx = raw.indexOf('\r\n\r\n');
-          if (idx < 0) return done(reject)(new Error('No HTTP response'));
-          const headStr = raw.slice(0, idx);
-          const status = parseInt(headStr.split(' ')[1], 10);
-          let respBody = raw.slice(idx + 4);
-          // 解码 chunked transfer-encoding（OKX/CF 使用）
-          if (/transfer-encoding:\s*chunked/i.test(headStr)) {
-            let decoded = '';
-            let pos = 0;
-            while (pos < respBody.length) {
-              const lineEnd = respBody.indexOf('\r\n', pos);
-              if (lineEnd < 0) break;
-              const sizeHex = respBody.slice(pos, lineEnd).trim();
-              if (!sizeHex) { pos = lineEnd + 2; continue; }
-              const size = parseInt(sizeHex, 16);
-              if (isNaN(size) || size === 0) break;
-              decoded += respBody.slice(lineEnd + 2, lineEnd + 2 + size);
-              pos = lineEnd + 2 + size + 2;
-            }
-            respBody = decoded;
-          }
-          resolve(new Response(respBody, { status, headers: { 'content-type': 'application/json' } }));
-        } catch (e) { done(reject)(e); }
-      });
-    });
-    socket.on('error', done(reject));
-  });
+	if (!PROXY_URL) return fetch(url, opts);
+	return new Promise((resolve, reject) => {
+		const u = new URL(url);
+		const proxy = new URL(PROXY_URL.includes('://') ? PROXY_URL : 'http://' + PROXY_URL);
+		const targetPort = u.port || (u.protocol === 'https:' ? 443 : 80);
+		let settled = false;
+		const timer = setTimeout(() => { if (!settled) { settled = true; socket.destroy(); reject(new Error('proxiedFetch timeout')); } }, opts.timeoutMs || TIMEOUT_MS);
+		const socket = net.connect(Number(proxy.port || 7897), proxy.hostname, () => {
+			socket.write(`CONNECT ${u.hostname}:${targetPort} HTTP/1.1\r\nHost: ${u.hostname}:${targetPort}\r\n\r\n`);
+		});
+		let handshake = '';
+		const done = (fn) => (v) => { if (!settled) { settled = true; clearTimeout(timer); socket.destroy(); fn(v); } };
+		socket.on('data', (d) => {
+			handshake += d.toString();
+			if (!handshake.includes('\r\n\r\n')) return;
+			if (!handshake.startsWith('HTTP/1.1 200')) {
+				return done(reject)(new Error('CONNECT failed: ' + handshake.split('\r\n')[0]));
+			}
+			socket.removeAllListeners('data');
+			const tlsSock = tls.connect({ socket, servername: u.hostname }, () => {
+				const headers = { ...(opts.headers || {}) };
+				headers['Host'] = u.hostname;
+				headers['Connection'] = 'close';
+				const body = opts.body || '';
+				if (body) headers['Content-Length'] = Buffer.byteLength(body);
+				const head = `${opts.method || 'GET'} ${u.pathname}${u.search} HTTP/1.1\r\n` +
+					Object.entries(headers).map(([k, v]) => `${k}: ${v}`).join('\r\n') + '\r\n\r\n';
+				tlsSock.write(head + body);
+			});
+			let raw = '';
+			tlsSock.on('data', (c) => { raw += c; });
+			tlsSock.on('error', done(reject));
+			tlsSock.on('close', () => {
+				try {
+					const idx = raw.indexOf('\r\n\r\n');
+					if (idx < 0) return done(reject)(new Error('No HTTP response'));
+					const headStr = raw.slice(0, idx);
+					const status = parseInt(headStr.split(' ')[1], 10);
+					let respBody = raw.slice(idx + 4);
+					// 解码 chunked transfer-encoding（OKX/CF 使用）
+					if (/transfer-encoding:\s*chunked/i.test(headStr)) {
+						let decoded = '';
+						let pos = 0;
+						while (pos < respBody.length) {
+							const lineEnd = respBody.indexOf('\r\n', pos);
+							if (lineEnd < 0) break;
+							const sizeHex = respBody.slice(pos, lineEnd).trim();
+							if (!sizeHex) { pos = lineEnd + 2; continue; }
+							const size = parseInt(sizeHex, 16);
+							if (isNaN(size) || size === 0) break;
+							decoded += respBody.slice(lineEnd + 2, lineEnd + 2 + size);
+							pos = lineEnd + 2 + size + 2;
+						}
+						respBody = decoded;
+					}
+					resolve(new Response(respBody, { status, headers: { 'content-type': 'application/json' } }));
+				} catch (e) { done(reject)(e); }
+			});
+		});
+		socket.on('error', done(reject));
+	});
+}
+
+ async function postRelay(url, payload, authKey, timeoutMs = 30000) {
+	const MAX_ATTEMPTS = 3;
+	for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+		const controller = new AbortController();
+		const timer = setTimeout(() => controller.abort(), timeoutMs);
+		try {
+			const resp = await fetch(url, {
+				method: 'POST',
+				headers: { 'Content-Type': 'application/json', 'X-Auth-Key': authKey },
+				body: JSON.stringify(payload),
+				signal: controller.signal,
+			});
+			const text = await resp.text();
+			let result = null;
+			try { result = JSON.parse(text); } catch (e) { result = { ok: false, error: text.slice(0, 200) }; }
+			if (resp.ok && result && result.ok) return result;
+			// 4xx：认证/校验错误，重试无意义
+			if (resp.status >= 400 && resp.status < 500) {
+				console.error(`Post ${url} rejected (HTTP ${resp.status}):`, text.slice(0, 200));
+				return result;
+			}
+			// 5xx / 业务 ok:false：服务端暂时错误，退避重试
+			console.error(`Post ${url} HTTP ${resp.status} (attempt ${attempt}/${MAX_ATTEMPTS}):`, text.slice(0, 200));
+		} catch (e) {
+			console.error(`Post ${url} failed (attempt ${attempt}/${MAX_ATTEMPTS}): ${e.message}`);
+			if (attempt === MAX_ATTEMPTS) return null;
+		} finally { clearTimeout(timer); }
+		if (attempt < MAX_ATTEMPTS) await new Promise(r => setTimeout(r, attempt * 5000)); // 5s / 10s 退避
+	}
+	return null;
 }
 
 async function fetchBinance() {
@@ -197,6 +229,8 @@ async function fetchOkx() {
       const open24h = parseFloat(t.open24h);
       if (isNaN(price) || price <= 0) continue;
       const ba = t.instId.replace('-USDT-SWAP', '');
+      // volCcy24h 是币数不是 USDT 成交额：×last 换算（报告 C6）
+      const okxUsdtVol = parseFloat(t.volCcy24h || '0') * price;
       rows.push({
         symbol: ba + 'USDT',
         base_asset: ba,
@@ -205,7 +239,7 @@ async function fetchOkx() {
         amplitude_24h_pct: (high && low && high > 0 && low > 0)
           ? Math.round(((high - low) / price) * 100 * 100) / 100
           : 0,
-        volume_24h_usdt: parseFloat(t.volCcy24h || '0'),
+        volume_24h_usdt: okxUsdtVol,
       });
     }
     return rows;
@@ -338,24 +372,18 @@ async function relayDemon(binanceRows, agg, sharedOiMap) {
       oi_stage_label: stage.label,
     });
   }
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
-  try {
-    const resp = await fetch(DEMON_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Auth-Key': DEMON_RELAY_KEY },
-      body: JSON.stringify({ data: payload }),
-      signal: controller.signal,
-    });
-    const result = await resp.json();
-    if (resp.ok && result.ok) {
-      console.log(`Demon relay OK: ${result.coins} coins — updated ${result.updated}`);
-    } else {
-      console.error(`Demon relay error (HTTP ${resp.status}):`, JSON.stringify(result));
-    }
-  } catch (e) {
-    console.error('Demon relay failed:', e.message);
-  } finally { clearTimeout(timer); }
+  if (!DEMON_RELAY_KEY) {
+    console.error('FATAL: DEMON_RELAY_KEY not set.');
+    return;
+  }
+  const result = await postRelay(DEMON_URL, { data: payload }, DEMON_RELAY_KEY);
+  if (result && result.ok) {
+    console.log(`Demon relay OK: ${result.coins} coins — updated ${result.updated}`);
+  } else if (result) {
+    console.error('Demon relay rejected:', JSON.stringify(result));
+  } else {
+    console.error('Demon relay failed after retries: no response');
+  }
 }
 
 // ─── 小币筛选: Binance 资金费率 / 盘口深度 / 上线时间 ──────────
@@ -715,25 +743,19 @@ async function relayCoinfilter(binanceRows, oiMap, fundingMap, depthMap, listing
     });
   }
   if (payload.length === 0) { console.log('Coinfilter: no payload, skip'); return; }
+  if (!COINFILTER_RELAY_KEY) {
+    console.error('FATAL: DEMON_RELAY_KEY not set (coinfilter).');
+    return;
+  }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
-  try {
-    const resp = await fetch(COINFILTER_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Auth-Key': COINFILTER_RELAY_KEY },
-      body: JSON.stringify({ data: payload, mentioned: MENTIONED }),
-      signal: controller.signal,
-    });
-    const result = await resp.json();
-    if (resp.ok && result.ok) {
-      console.log(`Coinfilter relay OK: ${result.coins} coins — updated ${result.updated}`);
-    } else {
-      console.error(`Coinfilter relay error (HTTP ${resp.status}):`, JSON.stringify(result));
-    }
-  } catch (e) {
-    console.error('Coinfilter relay failed:', e.message);
-  } finally { clearTimeout(timer); }
+  const result = await postRelay(COINFILTER_URL, { data: payload, mentioned: MENTIONED }, COINFILTER_RELAY_KEY);
+  if (result && result.ok) {
+    console.log(`Coinfilter relay OK: ${result.coins} coins — updated ${result.updated}`);
+  } else if (result) {
+    console.error('Coinfilter relay rejected:', JSON.stringify(result));
+  } else {
+    console.error('Coinfilter relay failed after retries: no response');
+  }
 }
 
 // ── 全市场聚合：交易量 = Binance+Bybit+OKX 三所之和；OI = 三所 OI 之和 ──
@@ -830,29 +852,13 @@ async function main() {
 
     console.log(`Relaying ${total} tickers from ${sourceCount} source(s): ${Object.keys(payload).join(', ')}`);
 
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
-    try {
-      const resp = await fetch(WORKER_URL, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'X-Auth-Key': AUTH_KEY,
-        },
-        body: JSON.stringify(payload),
-        signal: controller.signal,
-      });
-
-      const result = await resp.json();
-      if (resp.ok && result.ok) {
-        console.log(`Relay OK: ${result.sources} — updated ${result.updated}`);
-      } else {
-        console.error(`Relay error (HTTP ${resp.status}):`, JSON.stringify(result));
-        // KV 限额等写入失败不阻断 demon/coinfilter 管道
-      }
-    } catch (e) {
-      console.error('Tickers relay failed:', e.message);
-    } finally { clearTimeout(timer); }
+    const result = await postRelay(WORKER_URL, payload, AUTH_KEY);
+    if (result && result.ok) {
+      console.log(`Relay OK: ${result.sources} — updated ${result.updated}`);
+    } else {
+      // 4xx 拒绝 / 重试耗尽（KV 限额等写入失败）不阻断 demon/coinfilter 管道
+      console.error('Tickers relay failed after retries:', result ? JSON.stringify(result) : 'no response');
+    }
 
     // 重计算模块节流：demon/coinfilter 每 30 分钟（KV 配额 1000 writes/day 约束），
     // forward 每 15 分钟（候选池归档核心）；tickers 每轮 5 分钟
@@ -899,7 +905,7 @@ async function main() {
 //         推送 /api/relay-forward，前端渲染吸筹候选池 + 回避名单
 // ═══════════════════════════════════════════════════════════
 const FORWARD_URL = process.env.FORWARD_URL || (DEMON_URL ? DEMON_URL.replace('/relay-demon', '/relay-forward') : 'https://app.slinglab.xyz/screener/api/relay-forward');
-const FORWARD_RELAY_KEY = process.env.DEMON_RELAY_KEY || '0eb3f463c85e160bbedbec6b3131bb862bdd0c82ccf9f390';
+const FORWARD_RELAY_KEY = process.env.DEMON_RELAY_KEY;
 const FORWARD_KLINES_CONCURRENCY = 12;
 const FORWARD_KLINES_LIMIT = 100;   // 100 天日线：60天回撤 + 横盘宽度 + 缩量 + 波动
 const FORWARD_OIH_CONCURRENCY = 4;
@@ -1168,25 +1174,19 @@ async function relayForward(binanceRows, debug, agg, sharedOiMap) {
     payload.push(f);
   }
   if (payload.length === 0) { console.log('Forward: no payload, skip'); return; }
+  if (!FORWARD_RELAY_KEY) {
+    console.error('FATAL: DEMON_RELAY_KEY not set (forward).');
+    return;
+  }
 
-  const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 30000);
-  try {
-    const resp = await fetch(FORWARD_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Auth-Key': FORWARD_RELAY_KEY },
-      body: JSON.stringify({ data: payload, env: btcEnv }),
-      signal: controller.signal,
-    });
-    const result = await resp.json();
-    if (resp.ok && result.ok) {
-      console.log(`Forward relay OK: ${result.coins} coins — updated ${result.updated}`);
-    } else {
-      console.error(`Forward relay error (HTTP ${resp.status}):`, JSON.stringify(result));
-    }
-  } catch (e) {
-    console.error('Forward relay failed:', e.message);
-  } finally { clearTimeout(timer); }
+  const result = await postRelay(FORWARD_URL, { data: payload, env: btcEnv }, FORWARD_RELAY_KEY);
+  if (result && result.ok) {
+    console.log(`Forward relay OK: ${result.coins} coins — updated ${result.updated}`);
+  } else if (result) {
+    console.error('Forward relay rejected:', JSON.stringify(result));
+  } else {
+    console.error('Forward relay failed after retries: no response');
+  }
   // 🩹 涨幅榜历史自愈：复用已抓取的 klineMap（100 天日线），检查最近 3 天归档缺失并回填
   await healGainerHistory(syms, klineMap).catch(e => console.error('Heal gainer history failed:', e.message));
 }

@@ -2447,7 +2447,7 @@ addEventListener('fetch', event => {
   if(path==='/api/relay-forward'&&event.request.method==='POST')return event.respondWith(hRWF(event.request,MARKET_DATA));
   if(path==='/api/mentioned')return event.respondWith(hML(MARKET_DATA));
   if(path==='/api/screener')return event.respondWith(hSC(MARKET_DATA));
-  if(path==='/api/appear-history')return event.respondWith(hAH(MARKET_DATA,event.request.url));
+  if(path==='/api/coin-history')return event.respondWith(hCH(MARKET_DATA,event.request.url));
   if(path==='/api/status')return event.respondWith(hST(MARKET_DATA));
   event.respondWith(hDB(MARKET_DATA));
 });
@@ -2479,7 +2479,28 @@ async function healGainerArchive(kv){
     if(isNaN(chg))continue;
     bySym.set(t.symbol,{symbol:t.symbol,base_asset:t.symbol.replace('USDT',''),change_24h_pct:chg,volume_24h_usdt:vol,last_price:isNaN(px)?null:px});
   }
-  if(bySym.size===0)return;
+  // 写前二次读 + 合并写（报告 C7）：scheduled 自愈与 relay 实时归档并发 RMW 同一 key，
+  // 直接覆盖写会用旧快照冲掉 hRL 刚写入的实时数据；KV 无条件写 API，
+  // 最小化覆盖窗口：二次读取若已有数据则合并（同 hRL 的 bySym 语义），不再标 healed
+  const latest=await kv.get(dayKey).catch(()=>null);
+  if(latest){
+    try{
+      const lp=JSON.parse(latest);
+      if((lp.gainers||[]).length>0){
+        const m=new Map(lp.gainers.map(g=>[g.symbol,g]));
+        for(const g of bySym.values()){
+          const ex=m.get(g.symbol);
+          if(ex){
+            if(g.change_24h_pct>ex.change_24h_pct){ex.change_24h_pct=g.change_24h_pct;ex.volume_24h_usdt=g.volume_24h_usdt}
+            if(!isNaN(g.last_price))ex.last_price=g.last_price;
+          }else m.set(g.symbol,g);
+        }
+        await kv.put(dayKey,JSON.stringify({date:day,gainers:Array.from(m.values()),updated:n}));
+        console.log('healed gainer_hist',day,bySym.size,'(merged with live data)');
+        return;
+      }
+    }catch(e){}
+  }
   await kv.put(dayKey,JSON.stringify({date:day,gainers:Array.from(bySym.values()),updated:n,healed:true}));
   console.log('healed gainer_hist',day,bySym.size);
 }
@@ -2704,6 +2725,77 @@ async function hAH(kv,url){
   out.sort((a,b)=>(b.last_seen||'').localeCompare(a.last_seen||''));
   return json({ok:true,hours,cutoff:cutoff.toISOString(),count:out.length,data:out});
 }
+// 🛤️ 单币历史轨迹：指定币在窗口内每天的候选池状态 + 涨幅榜状态 + 价格快照
+// 参数: symbol=BTC 或 BTCUSDT（大小写不敏感）; days=30（默认，上限 90）
+// 数据源: fwd_hist_*（候选池归档）+ gainer_hist_*（涨幅榜归档，含 last_price 收盘快照）
+async function hCH(kv,url){
+  const u=new URL(url);
+  const sym=(u.searchParams.get('symbol')||'').trim().toUpperCase();
+  if(!sym)return json({ok:false,error:'missing symbol'},400);
+  const ba=sym.endsWith('USDT')?sym.slice(0,-4):sym;
+  if(!/^[A-Z0-9]{1,20}$/.test(ba))return json({ok:false,error:'invalid symbol'},400);
+  const days=Math.min(parseInt(u.searchParams.get('days')||'30',10)||30,90);
+  const now=new Date();
+  const daysArr=[];
+  for(let i=0;i<days;i++){
+    const bj=new Date(now.getTime()+8*3600*1000-i*86400000);
+    daysArr.push(bj.toISOString().slice(0,10));
+  }
+  // 并行读窗口内候选池 + 涨幅榜归档
+  const keys=daysArr.flatMap(ds=>['fwd_hist_'+ds.replace(/-/g,''),'gainer_hist_'+ds.replace(/-/g,'')]);
+  const vals=await Promise.all(keys.map(k=>kv.get(k)));
+  const timeline=[];
+  let firstSeen=null,lastSeen=null,candDays=0,gainDays=0,bestScore=null,maxChg=null,lastPrice=null;
+  daysArr.forEach((ds,idx)=>{
+    const fr=vals[idx*2],gr=vals[idx*2+1];
+    const day={date:ds,candidate:false,forward_score:null,first_seen:null,last_seen:null,gainer:false,change_24h_pct:null,rank:null,volume_24h_usdt:null,last_price:null};
+    if(fr){
+      try{
+        const p=JSON.parse(fr);
+        for(const c of (p.candidates||[])){
+          if(c.base_asset!==ba&&c.symbol!==ba+'USDT')continue;
+          day.candidate=true;
+          day.forward_score=c.forward_score!=null?c.forward_score:null;
+          day.first_seen=c.first_seen||null;
+          day.last_seen=c.last_seen||null;
+          if(!firstSeen||(c.first_seen&&c.first_seen<firstSeen))firstSeen=c.first_seen||ds;
+          if(!lastSeen||(c.last_seen&&c.last_seen>lastSeen))lastSeen=c.last_seen||ds;
+          if(c.forward_score!=null&&(bestScore==null||c.forward_score>bestScore))bestScore=c.forward_score;
+        }
+      }catch(e){}
+    }
+    if(gr){
+      try{
+        const p=JSON.parse(gr);
+        const gs=(p.gainers||[]).slice();
+        gs.sort((a,b)=>(b.change_24h_pct||0)-(a.change_24h_pct||0));
+        for(let k=0;k<gs.length;k++){
+          const g=gs[k];
+          if(g.base_asset!==ba&&g.symbol!==ba+'USDT')continue;
+          day.gainer=true;
+          day.change_24h_pct=g.change_24h_pct!=null?g.change_24h_pct:null;
+          day.rank=k+1;
+          day.volume_24h_usdt=g.volume_24h_usdt!=null?g.volume_24h_usdt:null;
+          day.last_price=g.last_price!=null?g.last_price:null;
+          if(g.change_24h_pct!=null&&(maxChg==null||g.change_24h_pct>maxChg))maxChg=g.change_24h_pct;
+          if(g.last_price!=null)lastPrice=g.last_price;
+        }
+      }catch(e){}
+    }
+    if(day.candidate)candDays++;
+    if(day.gainer)gainDays++;
+    timeline.push(day);
+  });
+  // 时间正序（今天在前 → 反转）
+  timeline.reverse();
+  // lastPrice 取窗口内最新日（daysArr 从今天往前，最后写入的是最旧日）
+  if(timeline.length>0&&timeline[timeline.length-1].last_price!=null)lastPrice=timeline[timeline.length-1].last_price;
+  return json({ok:true,symbol:ba+'USDT',base_asset:ba,days,tz:'UTC+8',
+    summary:{first_seen:firstSeen,last_seen:lastSeen,candidate_days:candDays,gainer_days:gainDays,best_forward_score:bestScore,max_change_24h_pct:maxChg,last_price:lastPrice},
+    timeline});
+}
+
+// 📊 候选池表现分析：每日候选 → fwd1/3/5 收益 vs 市场基准
 
 // 📊 候选池表现分析：每日候选 → fwd1/3/5 收益 vs 市场基准
 async function hPA(kv,url){const u=new URL(url);const days=Math.min(parseInt(u.searchParams.get('days')||'14',10)||14,60);const now=new Date();const daysArr=[];for(let i=0;i<days;i++){const bj=new Date(now.getTime()+8*3600*1000-i*86400000);daysArr.push(bj.toISOString().slice(0,10));}
