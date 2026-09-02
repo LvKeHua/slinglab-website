@@ -246,12 +246,12 @@ Start-Process -NoNewWindow -FilePath "cloudflared" -ArgumentList "tunnel --confi
 |------|-----|
 | IP | `192.255.193.128` |
 | 用户 | `root` |
-| 密码 | `7Jj6Mz80BcArGxE3m7` |
+| 密码 | (见本地密码库，勿入库) |
 | SSH 端口 | `22` |
 | 规格 | 1 vCPU, 1GB RAM, 20GB SSD |
 | 系统 | Ubuntu 24.04 |
 | 价格 | $15.39/年（使用优惠码 `INTENSEINVESTOR` 后 30% 永久折扣） |
-| 控制面板 | https://nerdvm.racknerd.com (用户: vmuser352875, 密码: DCqPKommgV6m5LJ) |
+| 控制面板 | https://nerdvm.racknerd.com (用户: vmuser352875, 密码见本地密码库) |
 
 ### ② Cloudflare 域名管理
 | 项目 | 值 |
@@ -357,7 +357,7 @@ location /新项目名/ {
 直接把这三段信息发给 Agent：
 
 > **① RackNerd VPS**
-> IP: 192.255.193.128, 用户: root, 密码: 7Jj6Mz80BcArGxE3m7, 端口: 22
+> IP: 192.255.193.128, 用户: root, 密码: (见本地密码库), 端口: 22
 >
 > **② Cloudflare**
 > 域名: slinglab.xyz, 账户: lukehua815@gmail.com
@@ -369,3 +369,28 @@ location /新项目名/ {
 然后说清楚新项目是做什么的、用什么技术栈。Agent 会自动 SSH 上去部署并加到 nginx 路由里。
 
 **注意**: RunnerXBT 模块已锁定，任何新项目部署都不得修改 `/opt/runnerxbt/` 下的任何文件。
+
+---
+
+## 九、全项目安全审查（2026-08-31）
+
+> 10 个 herdr agent 并行只读审查，完整报告见根目录 `SlingLab_完整日志.md` 第 14 节。
+
+本模块（02_runnerxbt）相关发现：
+
+**🔴 Critical**
+- 硬编码 CF API Token（`cf-worker/deploy.js:14`）
+
+**🟠 High**
+- 路径穿越任意文件读取（`backend/server.py:105-110`）——`{filename:path}` 未校验 `..`，实测可读 `tg_session`（Telegram 账号接管）
+
+**🟡 Medium**
+- classifier 裸子串匹配 + 未接入任何管道（`backend/classifier.py:29-32`）——`BUY` 命中 `BUYING`，且 server.py 未 import classifier，red/yellow/blue 分级实际不生效
+- messages_final.json 字段/日期格式异构（`tools/merge_messages.py:14-18`）——3295 条 date-only + 606 条 ISO
+
+**🟢 Low**
+- 去重键仅 id 无 channel 作用域（`merge_messages.py:10,15`）
+- scraper 目录 88 文件 7 版本并存 + ~55 个 `_` 前缀调试脚本
+- Telegram QR 登录页入库（`scraper/qr.html`）
+- CORS `*` + allow_credentials=True（`backend/server.py:17-23`）
+- 硬编码默认 TELEGRAM_API_ID（`backend/config.py:18`）

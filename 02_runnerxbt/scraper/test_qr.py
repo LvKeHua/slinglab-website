@@ -2,10 +2,13 @@
 import asyncio, sys, os, webbrowser
 sys.stdout.reconfigure(encoding='utf-8')
 
+API_ID = int(os.environ.get("TELEGRAM_API_ID", "32862414"))
+API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
+
 async def main():
     from telethon import TelegramClient, errors
     
-    client = TelegramClient('test_session3', 32862414, 'ef44e2d6868e8614646abb59c58aaa05')
+    client = TelegramClient('test_session3', API_ID, API_HASH)
     await client.connect()
     print('connected, requesting QR...')
     

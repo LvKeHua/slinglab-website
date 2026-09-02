@@ -7,8 +7,8 @@ SESSION_PATH = os.path.join(BASE_DIR, 'scraper', 'telegram_session')
 MEDIA_DIR = os.path.join(BASE_DIR, 'data', 'media')
 os.makedirs(MEDIA_DIR, exist_ok=True)
 
-API_ID = 32862414
-API_HASH = 'ef44e2d6868e8614646abb59c58aaa05'
+API_ID = int(os.environ.get("TELEGRAM_API_ID", "32862414"))
+API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
 
 async def main():
     from telethon import TelegramClient, errors

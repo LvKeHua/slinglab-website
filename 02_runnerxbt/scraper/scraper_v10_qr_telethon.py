@@ -11,8 +11,8 @@ os.makedirs(MEDIA_DIR, exist_ok=True)
 async def qr_login():
     from telethon import TelegramClient
     
-    API_ID = 32862414
-    API_HASH = 'ef44e2d6868e8614646abb59c58aaa05'
+    API_ID = int(os.environ.get("TELEGRAM_API_ID", "32862414"))
+    API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
     
     client = TelegramClient(SESSION_PATH, API_ID, API_HASH)
     await client.connect()

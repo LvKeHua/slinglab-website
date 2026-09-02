@@ -7,9 +7,9 @@ MEDIA = os.path.join(BASE, 'data', 'media')
 SESSION = os.path.join(BASE, 'scraper', 'tg_session')
 os.makedirs(MEDIA, exist_ok=True)
 
-API_ID = 32862414
-API_HASH = 'ef44e2d6868e8614646abb59c58aaa05'
-PASSWORD = '24681357lxy'
+API_ID = int(os.environ.get("TELEGRAM_API_ID", "32862414"))
+API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
+PASSWORD = os.environ.get("TELEGRAM_PASSWORD", "")
 
 async def main():
     from telethon import TelegramClient, errors

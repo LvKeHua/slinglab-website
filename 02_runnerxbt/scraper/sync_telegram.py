@@ -14,8 +14,8 @@ MEDIA_DIR = BASE_DIR / 'data' / 'media'
 OUT_FILE = BASE_DIR / 'data' / 'messages_telethon.json'
 LOG_FILE = BASE_DIR / 'sync.log'
 
-API_ID = 32862414
-API_HASH = 'ef44e2d6868e8614646abb59c58aaa05'
+API_ID = int(os.environ.get("TELEGRAM_API_ID", "32862414"))
+API_HASH = os.environ.get("TELEGRAM_API_HASH", "")
 # VPS 直连无需代理；如需代理设 RUNNER_PROXY='socks5://127.0.0.1:7897'
 PROXY = None
 _px = os.environ.get('RUNNER_PROXY', '')
