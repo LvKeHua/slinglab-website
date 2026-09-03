@@ -394,3 +394,33 @@ location /新项目名/ {
 - Telegram QR 登录页入库（`scraper/qr.html`）
 - CORS `*` + allow_credentials=True（`backend/server.py:17-23`）
 - 硬编码默认 TELEGRAM_API_ID（`backend/config.py:18`）
+
+---
+
+## 十、2026-09-02/09-03 线上回退排查 + 部署链路修复
+
+### 症状
+用户报告 runnerxbt"回到之前版本"。两层原因：
+1. **git**：09-01 rebase 时安全修复（8 文件硬编码→环境变量）未 commit，autostash 存于 dangling `12f9b7d`，rebase 后未恢复。已提交 `af5bc4f` 固化。
+2. **线上（根因）**：`app.slinglab.xyz/runnerxbt/` 被指回 VPS 7-21 静态快照（3783 条）；CF 部署凭证全部失效，Pages 自 08-31 03:55 后无新部署。
+
+### 根因
+- CI 部署步骤 `wrangler ... | tail -6` 管道吞掉失败退出码 → workflow 假 success，实际 `Invalid access token [code: 9109]`
+- 所有凭证失效：wrangler OAuth（cfort_ invalid_grant）、cfut_×3、cfoat_、GitHub secrets
+
+### 修复（09-03）
+1. 手动重建 deploy_v2 并部署 Pages（3891 条）
+2. 用户创建新 API Token `cfat_***（见本地密码库）`（Workers/KV/Pages Edit）
+3. slinglab-homepage Worker 增加 `/runnerxbt/*` → `runnerxbt.pages.dev` 代理（`/media/` 重写为 `/runnerxbt/media/`）
+4. `CF_API_TOKEN` 更新到两仓库；禁用 `sync.yml`（OAuth 死），启用 `auto-sync.yml`（每 10 分钟）
+
+### 验证
+- `runnerxbt.pages.dev` ✅ 3892 条（09-02）
+- `app.slinglab.xyz/runnerxbt/` ✅ 3892 条（代理生效，媒体 200）
+- CI auto-sync ✅ `Deployment complete!`
+- Telegram 同步 ✅ `Auth OK: 01`，每 10 分钟自动
+
+### 遗留
+- 新 token 仅存 GitHub secrets，本地未存
+- VPS SSH 连不上（待查）；`sync.yml` 已禁用
+- 安全审查遗留（15.4）：凭证轮换、git 历史清理、qr.html
