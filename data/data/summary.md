@@ -1,9 +1,9 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-09-07 04:13:16 UTC
-**Coins tracked**: 520
-**With circulating ratio**: 318 (61.2%)
-**Average ratio**: 67.4%
+**Run at**: 2026-09-07 10:06:08 UTC
+**Coins tracked**: 521
+**With circulating ratio**: 319 (61.2%)
+**Average ratio**: 67.3%
 **Data conflicts**: 11 (2.1%)
 **Stale CG data**: 2 (0.4%)
 
