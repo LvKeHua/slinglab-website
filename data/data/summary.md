@@ -1,10 +1,10 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-09-08 09:30:14 UTC
-**Coins tracked**: 520
-**With circulating ratio**: 317 (61.0%)
-**Average ratio**: 67.3%
-**Data conflicts**: 11 (2.1%)
+**Run at**: 2026-09-08 14:20:45 UTC
+**Coins tracked**: 519
+**With circulating ratio**: 314 (60.5%)
+**Average ratio**: 67.4%
+**Data conflicts**: 12 (2.3%)
 **Stale CG data**: 2 (0.4%)
 
 ### Top 10 Conflicts (largest CMC vs CG discrepancy)
@@ -13,11 +13,11 @@
 |--------|-----------|----------|------|
 | M | 22.7% | 100.0% | 77.3% |
 | IMX | 100.0% | 43.97% | 56.03% |
+| FLOKI | 95.24% | 48.22% | 47.02% |
 | BGB | 75.87% | 35.0% | 40.87% |
 | NEXO | 64.61% | 100.0% | 35.39% |
 | BNB | 100.0% | 66.58% | 33.42% |
-| PONS | 99.99% | 71.21% | 28.78% |
+| PONS | 100.0% | 71.21% | 28.79% |
 | QNT | 81.13% | 99.53% | 18.4% |
 | DRV | 49.17% | 66.65% | 17.48% |
 | MORPHO | 51.85% | 68.88% | 17.03% |
-| JUP | 48.37% | 33.2% | 15.17% |
