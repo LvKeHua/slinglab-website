@@ -1,9 +1,9 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-09-09 18:28:02 UTC
-**Coins tracked**: 518
-**With circulating ratio**: 315 (60.8%)
-**Average ratio**: 67.0%
+**Run at**: 2026-09-09 21:37:15 UTC
+**Coins tracked**: 519
+**With circulating ratio**: 315 (60.7%)
+**Average ratio**: 67.1%
 **Data conflicts**: 12 (2.3%)
 **Stale CG data**: 2 (0.4%)
 
@@ -20,4 +20,4 @@
 | PONS | 100.0% | 71.21% | 28.79% |
 | QNT | 81.13% | 99.53% | 18.4% |
 | DRV | 49.17% | 66.65% | 17.48% |
-| MORPHO | 51.85% | 68.88% | 17.03% |
+| MORPHO | 51.85% | 68.89% | 17.04% |
