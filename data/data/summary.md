@@ -1,9 +1,9 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-09-10 04:25:40 UTC
+**Run at**: 2026-09-10 09:32:30 UTC
 **Coins tracked**: 518
 **With circulating ratio**: 312 (60.2%)
-**Average ratio**: 67.0%
+**Average ratio**: 67.7%
 **Data conflicts**: 12 (2.3%)
 **Stale CG data**: 2 (0.4%)
 
@@ -17,7 +17,7 @@
 | BGB | 75.87% | 35.0% | 40.87% |
 | NEXO | 64.61% | 100.0% | 35.39% |
 | BNB | 100.0% | 66.58% | 33.42% |
-| PONS | 99.99% | 71.21% | 28.78% |
+| PONS | 100.0% | 71.21% | 28.79% |
 | QNT | 81.13% | 99.53% | 18.4% |
 | DRV | 49.17% | 66.65% | 17.48% |
 | MORPHO | 51.85% | 68.89% | 17.04% |
