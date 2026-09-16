@@ -465,7 +465,7 @@ th.sortable:hover{color:#60a5fa}
 @media(prefers-reduced-motion:reduce){*{animation:none!important;transition:none!important}}
 </style>
 </head><body>
-<div id="tabbar"><button class="tab-btn tab-chip active" onclick="switchTab('chip')">🧲 筹码筛选</button><button class="tab-btn tab-demon" onclick="switchTab('demon')">👺 妖币扫描</button><button class="tab-btn tab-coinfilter" onclick="switchTab('coinfilter')">🪙 小币筛选</button><button class="tab-btn tab-forward" onclick="switchTab('forward')">🧭 前导筛选</button><button class="tab-btn tab-watchlist" onclick="switchTab('watchlist')">🧭 筛币工作台</button><button class="tab-btn tab-overlap" onclick="switchTab('overlap')">🎯 涨幅榜重合</button></div>
+<div id="tabbar"><button class="tab-btn tab-chip active" onclick="switchTab('chip')">🧲 筹码筛选</button><button class="tab-btn tab-demon" onclick="switchTab('demon')">👺 妖币扫描</button><button class="tab-btn tab-coinfilter" onclick="switchTab('coinfilter')">🪙 小币筛选</button><button class="tab-btn tab-forward" onclick="switchTab('forward')">🧭 前导筛选</button><button class="tab-btn tab-watchlist" onclick="switchTab('watchlist')">🧭 筛币工作台</button><button class="tab-btn tab-overlap" onclick="switchTab('overlap')">🎯 涨幅榜重合</button><button class="tab-btn tab-timing" onclick="switchTab('timing')">⏱ 择时层</button><button class="tab-btn tab-edge" onclick="switchTab('edge')">⚡ 蓄水埋伏</button></div>
 <div id="root"><div class="loading-root"><div class="spinner"></div><div class="loading-text">正在加载数据...</div></div></div>
 <script>
 var BASE = (window.location.pathname || "/").replace(/\/+$/, "");
@@ -565,7 +565,9 @@ H+="<div class=\"calc-card\"><h3>资金分配器</h3><p style=\"font-size:.75rem
 H+="</div></div><div class=\"footer\">⚠️ 仅供研究参考，不构成投资建议<br>最后更新 "+us+"</div>";
 el.innerHTML=H;sS();cf();}
 function cP(){pa="";mcMin=null;mcMax=null;crMin=null;crMax=null;mA=null;mR=null;sS();aF();}
-async function rf(){try{await fetch(BASE+"/api/refresh",{method:"POST"});}catch(e){}load();}
+// 刷新数据：/api/refresh 已改为服务端鉴权（仅 relay 用 X-Auth-Key 调用），
+// 浏览器点按改为重新拉取当前 KV 快照（数据由 relay 每 5 分钟推送）。
+function rf(){load();}
 function cf(){if(!hasBybit){var el=document.getElementById("calc-result");if(el)el.innerHTML="<div class=\"calc-result\" style=\"color:var(--text-muted)\">缺少价格数据，连接Bybit后可启用资金分配器</div>";return;}var el=document.getElementById("calc-result");if(!el)return;
 var cap=+document.getElementById("capital").value||1000;var np=+document.getElementById("npos").value||5;
 var top=fl.concat().sort(function(a,b){if(b.star_rating!==a.star_rating)return b.star_rating-a.star_rating;return (a.circulating_ratio||1)-(b.circulating_ratio||1);}).slice(0,np);
@@ -871,6 +873,8 @@ function fwdTagHtml(r) {
   if (r.ret_10d != null && r.ret_10d >= -0.05 && r.ret_10d <= 0.15) tags.push('<span class="tag tag-watch">缓涨</span>');
   if (r.vol_compress_5d != null && r.vol_compress_5d < 0.05) tags.push('<span class="tag tag-low">缩波</span>');
   if (r.days_since_listing != null && r.days_since_listing <= 180) tags.push('<span class="tag tag-new">新上</span>');
+  // 择时追强禁令：relay 推送前已由 applyTimingBan 降级为 watch，这里标出降级原因
+  if (r.timing_ban && r.timing_ban.length) tags.push('<span class="tag tag-danger">⛔' + e(r.timing_ban.join('·')) + '</span>');
   return tags.join(' ');
 }
 
@@ -878,6 +882,16 @@ function fwdTagHtml(r) {
 function fwdWatchKey() { return 'fwd_watchlist'; }
 function fwdGetWatch() {
   try { return JSON.parse(localStorage.getItem(fwdWatchKey()) || '{}'); } catch (e) { return {}; }
+}
+// JS 字符串字面量转义：用于把 symbol 等外部数据放进 onclick='...'。
+// 此前直接拼接，symbol 含单引号即可逃逸出字符串执行任意 JS（数据来自交易所 API）。
+function jsStr(v) {
+  return String(v)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r?\n/g, '')
+    .replace(/</g, '\\x3c')
+    .replace(/"/g, '\\x22');
 }
 function fwdToggleWatch(sym) {
   var w = fwdGetWatch();
@@ -965,8 +979,7 @@ function renderForward() {
       H += '<td class="mono">' + (r.days_since_listing != null ? r.days_since_listing + 'd' : '—') + '</td>';
       H += '<td class="mono score">' + (r.forward_score != null ? r.forward_score : '—') + '</td>';
       H += '<td>' + fwdTagHtml(r) + '</td>';
-      H += '<td><button class="btn btn-sm" onclick="fwdToggleWatch(\'' + r.symbol + '\')">' + (marked ? '取消' : '标记') + '</button></td>';
-      H += '</tr>';
+      H += '<td><button class="btn btn-sm" onclick="fwdToggleWatch(\'' + jsStr(r.symbol) + '\')">' + (marked ? '取消' : '标记') + '</button></td>';
     });
     H += '</tbody></table></div>';
   }
@@ -1880,55 +1893,90 @@ function renderCoinfilter(container) {
 // 规则: 硬门槛五要素(下行保护 dn10 3.3%) + 强度分(叙事+1) + 事件回避(-3, fwd5 -1.7%)
 // ═══════════════════════════════════════════════════════════
 var scData = [], scLoaded = false, scTag = '', scSort = 'forward_score', scAsc = false, scAppearTotal = 0;
-// 历史出现面板
-var scAhHours = 24, scAhCache = {};
-function scAhSet(h) { scAhHours = h; scAhLoad(); }
+var scEnv = null, scSources = null, scUpdated = null, scStale = true;
+// 历史出现面板：快捷窗口 + 任意北京日期范围 + 全部归档。
+var scAhMode = 'hours', scAhHours = 24, scAhStart = '2026-08-04', scAhEnd = scBjToday(), scAhCache = {};
+
+function scBjToday() {
+  return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+}
+
+function scAhPreset(mode, value) {
+  scAhMode = mode;
+  if (mode === 'hours') scAhHours = value;
+  renderScreener();
+  scAhLoad();
+}
+
+function scAhCustom() {
+  var start = document.getElementById('sc-ah-start');
+  var end = document.getElementById('sc-ah-end');
+  if (!start || !end || !start.value || !end.value) return;
+  if (start.value > end.value) {
+    document.getElementById('sc-ah-panel').innerHTML = '<div class="empty-msg" style="padding:14px">开始日期不能晚于结束日期</div>';
+  } else {
+    scAhStart = start.value;
+    scAhEnd = end.value;
+    scAhMode = 'range';
+    renderScreener();
+    scAhLoad();
+  }
+}
+function scAhRequest() {
+  if (scAhMode === 'all') return { key: 'all', url: BASE + '/api/appear-history?all=1' };
+  if (scAhMode === 'range') return { key: scAhStart + ':' + scAhEnd, url: BASE + '/api/appear-history?start=' + encodeURIComponent(scAhStart) + '&end=' + encodeURIComponent(scAhEnd) };
+  return { key: 'h:' + scAhHours, url: BASE + '/api/appear-history?hours=' + scAhHours };
+}
+
 function scAhLoad() {
   var panel = document.getElementById('sc-ah-panel');
   var status = document.getElementById('sc-ah-status');
   if (!panel) return;
-  if (scAhCache[scAhHours]) { scAhRender(scAhCache[scAhHours]); return; }
-  panel.innerHTML = '<div class="empty-msg" style="padding:14px">🕘 正在查询 ' + scAhHours + ' 小时内入选过的币...</div>';
+  var request = scAhRequest();
+  if (scAhCache[request.key]) { scAhRender(scAhCache[request.key]); return; }
+  var controller = new AbortController();
+  var timer = setTimeout(function () { controller.abort(); }, 20000);
+  panel.innerHTML = '<div class="empty-msg" style="padding:14px">正在查询历史候选归档...</div>';
   if (status) status.innerHTML = '';
-  fetch(BASE + '/api/appear-history?hours=' + scAhHours).then(function (r) { return r.json(); }).then(function (d) {
-    if (d.error) throw new Error(d.error);
-    scAhCache[scAhHours] = d;
-    scAhRender(d);
-  }).catch(function (err) {
-    panel.innerHTML = '<div class="empty-msg" style="padding:14px">查询失败: ' + e(err.message) + ' <button class="btn btn-sm" onclick="scAhLoad()">重试</button></div>';
-  });
+  fetch(request.url + (request.url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store', signal: controller.signal }).then(function (response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  }).then(function (data) {
+    if (data.error) throw new Error(data.error);
+    scAhCache[request.key] = data;
+    scAhStart = data.start || scAhStart;
+    scAhEnd = data.end || scAhEnd;
+    scAhRender(data);
+  }).catch(function (error) {
+    var message = error.name === 'AbortError' ? '请求超时（20秒）' : error.message;
+    panel.innerHTML = '<div class="empty-msg" style="padding:14px">查询失败: ' + e(message) + ' <button class="btn btn-sm" onclick="scAhLoad()">重试</button></div>';
+  }).finally(function () { clearTimeout(timer); });
 }
-function scAhRender(d) {
+
+function scAhRender(data) {
   var panel = document.getElementById('sc-ah-panel');
   var status = document.getElementById('sc-ah-status');
   if (!panel) return;
-  if (status) status.innerHTML = '共 ' + d.count + ' 个币';
-  var rows = d.data || [];
+  var range = (data.start || '—') + ' 至 ' + (data.end || '—');
+  if (status) status.innerHTML = '共 ' + data.count + ' 个币 · ' + range + ' · 有归档 ' + (data.archive_days || 0) + '/' + (data.selected_days || 0) + ' 天';
+  var rows = data.data || [];
   if (!rows.length) { panel.innerHTML = '<div class="empty-msg" style="padding:14px">该时间范围内没有币入选过候选池</div>'; return; }
-  var H = '<div class="table-wrap" style="margin-top:6px"><table class="tbl fwd-tbl"><thead><tr>';
-  H += '<th>币种</th><th>首次入选</th><th>最后入选</th><th>入选天数</th><th>出现次数</th><th>最高评分</th><th></th>';
-  H += '</tr></thead><tbody>';
-  rows.forEach(function (r) {
-    var fs = r.first_seen, ls = r.last_seen;
-    function fmt(iso) {
-      if (!iso) return '—';
-      var t = new Date(iso);
-      if (isNaN(t.getTime())) return iso;
-      var bj = new Date(t.getTime() + 8 * 3600 * 1000);
-      return ('0' + (bj.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + bj.getUTCDate()).slice(-2) + ' ' + ('0' + bj.getUTCHours()).slice(-2) + ':' + ('0' + bj.getUTCMinutes()).slice(-2);
-    }
-    H += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">';
-    H += '<td class="mono"><b>' + e(r.base_asset) + '</b></td>';
-    H += '<td class="mono" style="font-size:11px;color:#94a3b8">' + fmt(fs) + '</td>';
-    H += '<td class="mono" style="font-size:11px;color:#34d399">' + fmt(ls) + '</td>';
-    H += '<td class="mono">' + r.days + '天</td>';
-    H += '<td class="mono" style="' + (r.appear_count >= 10 ? 'color:#fbbf24;font-weight:800' : (r.appear_count >= 5 ? 'color:#f59e0b;font-weight:700' : 'color:#94a3b8')) + '">' + (r.appear_count > 0 ? r.appear_count + '次' : '—') + '</td>';
-    H += '<td class="mono score">' + (r.best_score != null ? r.best_score : '—') + '</td>';
-    H += '<td><button class="btn btn-sm" onclick="evJump(\'' + r.base_asset + '\')">查看</button></td>';
-    H += '</tr>';
+  function fmt(iso) {
+    if (!iso) return '—';
+    var time = new Date(iso);
+    if (isNaN(time.getTime())) return iso;
+    var bj = new Date(time.getTime() + 8 * 3600000);
+    return bj.getUTCFullYear() + '-' + ('0' + (bj.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + bj.getUTCDate()).slice(-2) + ' ' + ('0' + bj.getUTCHours()).slice(-2) + ':' + ('0' + bj.getUTCMinutes()).slice(-2);
+  }
+  var html = '<div class="table-wrap" style="margin-top:6px"><table class="tbl fwd-tbl"><thead><tr><th>币种</th><th>首次入选</th><th>最后入选</th><th>入选天数</th><th>出现次数</th><th>最高评分</th><th></th></tr></thead><tbody>';
+  rows.forEach(function (row) {
+    var count = row.appear_count == null ? '—' : row.appear_count + '次';
+    var countStyle = row.appear_count >= 10 ? 'color:#fbbf24;font-weight:800' : (row.appear_count >= 5 ? 'color:#f59e0b;font-weight:700' : 'color:#94a3b8');
+    html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04)"><td class="mono"><b>' + e(row.base_asset) + '</b></td><td class="mono" style="font-size:11px;color:#94a3b8">' + fmt(row.first_seen) + '</td><td class="mono" style="font-size:11px;color:#34d399">' + fmt(row.last_seen) + '</td><td class="mono">' + row.days + '天</td><td class="mono" style="' + countStyle + '">' + count + '</td><td class="mono score">' + (row.best_score != null ? row.best_score : '—') + '</td><td><button class="btn btn-sm" onclick="evJump(\'' + row.base_asset + '\')">查看</button></td></tr>';
   });
-  H += '</tbody></table></div>';
-  panel.innerHTML = H;
+  html += '</tbody></table></div>';
+  if (!data.appear_count_complete) html += '<div class="dim" style="font-size:11px;margin-top:6px">出现次数只在有逐次计数归档的日期精确；更早日期显示“—”。首次/最后入选、入选天数和最高评分来自每日候选归档。</div>';
+  panel.innerHTML = html;
 }
 // OI 范围自定义（客户端过滤，默认不设限 = 全市场，逻辑不变）
 var scOiMin = null, scOiMax = null;
@@ -2228,23 +2276,33 @@ setInterval(function () {
 
 function scLoad() {
   var root = document.getElementById('root');
+  var controller = new AbortController();
+  var timer = setTimeout(function () { controller.abort(); }, 20000);
   root.innerHTML = '<div class="empty-msg">🧭 正在加载筛币工作台（L0 环境闸门 + 候选池 + 排除层 + 告警）...</div>';
-  fetch(BASE + '/api/screener').then(function (r) { return r.json(); }).then(function (d) {
+  fetch(BASE + '/api/screener?t=' + Date.now(), { cache: 'no-store', signal: controller.signal }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function (d) {
     var rows = d.data || [];
     if (d.error && !rows.length) throw new Error(d.error);
     scData = rows;
     scEnv = d.env || null;
+    scSources = d.sources || null;
+    scUpdated = d.updated || null;
+    scStale = !!d.stale;
     scAppearTotal = d.appear_total || 0;
+    scAhCache = {};
     scLoaded = true;
     renderScreener();
   }).catch(function (err) {
-    root.innerHTML = '<div class="empty-msg">🧭 数据加载失败: ' + e(err.message) + '<br><br><button class="btn" onclick="scLoad()">重试</button></div>';
-  });
+    var message = err.name === 'AbortError' ? '请求超时（20秒）' : err.message;
+    root.innerHTML = '<div class="empty-msg">🧭 数据加载失败: ' + e(message) + '<br><br><button class="btn" onclick="scLoad()">重试</button></div>';
+  }).finally(function () { clearTimeout(timer); });
 }
-var scEnv = null;
 
 function scFiltered() {
   var rows = scData.slice();
+  // env_bear 已废弃（BTC 闸门移除）；保留兼容以防历史快照
   if (scTag === 'acc') rows = rows.filter(function (r) { return r.effective_signal === 'acc_candidate' || r.effective_signal === 'acc_candidate_env_bear'; });
   else if (scTag === 'avoid') rows = rows.filter(function (r) { return r.event_day || r.forward_signal === 'avoid_event'; });
   else if (scTag === 'alerts') rows = rows.filter(function (r) { return r.alerts && r.alerts.length > 0; });
@@ -2281,16 +2339,63 @@ function scClearOiRange() {
 function scSetPreset(t) { scTag = t; renderScreener(); }
 function scSortBy(k) { if (scSort === k) scAsc = !scAsc; else { scSort = k; scAsc = false; } renderScreener(); }
 
-function scEnvHtml() {
-  if (!scEnv || scEnv.up == null) return '<div class="fwd-hint fwd-hint-na">L0 环境闸门：未知（候选池冻结，保守）</div>';
-  if (scEnv.up) return '<div class="fwd-hint fwd-hint-bull">L0 环境闸门：🟢 放行（BTC ' + fP(scEnv.close) + ' &gt; SMA20 ' + fP(scEnv.sma20) + '）— 蓄水候选可启用（验证：涨市 +0.8%/胜率56%）</div>';
-  return '<div class="fwd-hint fwd-hint-bear">L0 环境闸门：🔴 冻结（BTC ' + fP(scEnv.close) + ' &lt; SMA20 ' + fP(scEnv.sma20) + '）— 蓄水候选降级为 env_bear，禁止按候选池进场（验证：跌市 -5.3%/胜率31%）</div>';
+function scAgeText(seconds) {
+  if (seconds == null || !isFinite(seconds)) return '未知';
+  if (seconds < 60) return Math.max(0, Math.round(seconds)) + '秒';
+  if (seconds < 3600) return Math.round(seconds / 60) + '分钟';
+  return (seconds / 3600).toFixed(1) + '小时';
 }
 
+function scFreshnessHtml() {
+  if (!scSources) return '<div class="fwd-hint fwd-hint-na">数据源时间未知，候选池冻结</div>';
+  var labels = { market: '市值', coinfilter: 'OI/行情', forward: '结构评分' };
+  var parts = [];
+  ['market', 'coinfilter', 'forward'].forEach(function (key) {
+    var source = scSources[key] || {};
+    var color = source.stale ? '#f87171' : '#34d399';
+    parts.push('<span style="color:' + color + '">' + labels[key] + ' ' + scAgeText(source.age_seconds) + '</span>');
+  });
+  var updated = scUpdated ? new Date(scUpdated).toLocaleString('zh-CN') : '未知';
+  var cls = scStale ? 'fwd-hint fwd-hint-bear' : 'fwd-hint fwd-hint-bull';
+  var state = scStale ? '数据源过期，候选池已冻结' : '数据源正常';
+  return '<div class="' + cls + '">' + state + ' · ' + parts.join(' · ') + ' · 有效快照 ' + e(updated) + '</div>';
+}
+
+// L0 已从「闸门」降级为「参考指标」
+// 依据：全市场 200,065 样本验证 —— 吸筹门槛+深底 在涨市 +0.46pp / 跌市 +0.52pp（两制皆正），
+// 原「跌市冻结」依据（吸筹门槛单独 -0.16pp）只对【浅底】样本成立（浅底跌市 -0.59pp）。
+function scEnvHtml() {
+  if (scStale) return '<div class="fwd-hint fwd-hint-na">L0 环境参考：数据源过期，仅作提示（不影响候选）</div>';
+  if (!scEnv || scEnv.up == null) return '<div class="fwd-hint fwd-hint-na">L0 环境参考：未知（BTC K线不可用，候选池不受影响）</div>';
+  var pos = 'BTC ' + fP(scEnv.close) + (scEnv.up ? ' &gt; ' : ' &lt; ') + 'SMA20 ' + fP(scEnv.sma20);
+  return '<div class="fwd-hint ' + (scEnv.up ? 'fwd-hint-bull' : 'fwd-hint-na') + '">'
+    + 'L0 环境参考（' + (scEnv.up ? '🟢 涨市' : '🔴 跌市') + '）· ' + pos
+    + ' · 闸门已移除：全市场验证显示吸筹门槛+深底两制皆正（涨市 +0.46pp / 跌市 +0.52pp）</div>';
+}
+
+// ⏱ 择时单元格 — 显示 L2 自动标注（数据来自 /api/screener 的 timing_* 字段）
+function scTimingCell(r) {
+  if (!r.timing_zone) return '<span class="dim">—</span>';
+  var col = r.timing_zone.indexOf('★') >= 0 ? '#4ade80'
+    : (r.timing_zone.indexOf('✗') >= 0 ? '#f87171'
+    : (r.timing_zone.indexOf('⚠️') >= 0 ? '#fbbf24'
+    : (r.timing_zone.indexOf('过热') >= 0 || r.timing_zone.indexOf('偏热') >= 0 ? '#fb923c' : '#94a3b8')));
+  var w = r.timing_zone.indexOf('★') >= 0 || r.timing_zone.indexOf('✗') >= 0 ? '600' : '400';
+  var h = '<span style="color:' + col + ';font-weight:' + w + '">' + e(r.timing_zone) + '</span>';
+  if (r.ret5 != null) {
+    h += ' <span class="dim" style="font-size:10px">5日' + (r.ret5 >= 0 ? '+' : '')
+      + (r.ret5 * 100).toFixed(1) + '%</span>';
+  }
+  if (r.timing_ban && r.timing_ban.length) {
+    h += '<br><span style="color:#f87171;font-size:10px">⛔' + e(r.timing_ban.join('·')) + '</span>';
+  }
+  return h;
+}
 function scSigTag(r) {
   var t = [];
   if (r.effective_signal === 'acc_candidate') t.push('<span class="tag tag-acc">🧭蓄水候选</span>');
   else if (r.effective_signal === 'acc_candidate_env_bear') t.push('<span class="tag tag-watch">🧭候选(环境冻结)</span>');
+  else if (r.effective_signal === 'acc_candidate_stale') t.push('<span class="tag tag-danger">候选(数据过期)</span>');
   else if (r.forward_signal === 'avoid_event' || r.event_day) t.push('<span class="tag tag-danger">⛔事件回避</span>');
   else if (r.forward_signal === 'watch') t.push('<span class="tag tag-watch">👁观察</span>');
   if (r.thin_book) t.push('<span class="tag tag-watch">⚠️薄盘口</span>');
@@ -2317,6 +2422,7 @@ function renderScreener() {
   var nThin = scData.filter(function (r) { return r.thin_book; }).length;
 
   var H = '<div class="fwd-wrap">';
+  H += scFreshnessHtml();
   H += scEnvHtml();
   H += '<div class="fwd-bar">';
   H += '<button class="btn' + (scTag === '' ? ' btn-active' : '') + '" onclick="scSetPreset(\'\')">🎯 全部 (' + rows.length + ')</button>';
@@ -2335,16 +2441,19 @@ function renderScreener() {
   H += '<span class="dim" id="sc-oi-status">' + (scOiMin != null || scOiMax != null ? '🔍 已过滤 OI ' + (scOiMin != null ? (scOiMin/1e6) : '0') + 'M ~ ' + (scOiMax != null ? (scOiMax/1e6) : '∞') + 'M' : '未过滤（全市场）') + '</span>';
   H += '</div>';
   H += '<div class="fwd-stats">🧭候选 ' + nAcc + ' · ⛔回避 ' + nAvoid + ' · 🔔告警 ' + nAlert + ' · ⚠️薄盘口 ' + nThin + (scAppearTotal > 0 ? ' · 📊 7天出现 ' + scAppearTotal + ' 次' : '') + '</div>';
-  H += '<div class="fwd-bar" style="margin-top:10px;flex-wrap:wrap;gap:6px;align-items:center">';
-  H += '<span class="dim" style="font-weight:700;color:var(--accent,#60a5fa)">🕘 历史出现</span>';
-  H += '<span class="dim">时间范围:</span>';
-  [1,4,6,12,24,48,72,96,120].forEach(function (h) {
-    H += '<button class="btn btn-sm' + (scAhHours === h ? ' btn-active' : '') + '" onclick="scAhSet(' + h + ')">' + (h < 24 ? h + 'h' : (h % 24 === 0 ? (h / 24) + 'd' : h + 'h')) + '</button>';
+  H += '<div style="margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);display:flex;flex-direction:column;gap:9px">';
+  H += '<div class="fwd-bar" style="margin:0;flex-wrap:wrap;gap:6px;align-items:center">';
+  H += '<span class="dim" style="font-weight:700;color:var(--accent,#60a5fa)">🕘 历史出现</span><span class="dim">快捷范围:</span>';
+  [[1,'1h'],[4,'4h'],[12,'12h'],[24,'1d'],[168,'7d'],[720,'30d']].forEach(function (item) {
+    H += '<button class="btn btn-sm' + (scAhMode === 'hours' && scAhHours === item[0] ? ' btn-active' : '') + '" onclick="scAhPreset(\'hours\',' + item[0] + ')">' + item[1] + '</button>';
   });
-  H += '<button class="btn btn-sm" onclick="scAhLoad()" style="background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;font-weight:700">查询</button>';
-  H += '<span class="dim" id="sc-ah-status"></span>';
-  H += '</div>';
-  H += '<div id="sc-ah-panel"></div>';
+  H += '<button class="btn btn-sm' + (scAhMode === 'all' ? ' btn-active' : '') + '" onclick="scAhPreset(\'all\',0)">全部历史</button>';
+  H += '<span class="dim" id="sc-ah-status"></span></div>';
+  H += '<div class="fwd-bar" style="margin:0;flex-wrap:wrap;gap:6px;align-items:center"><span class="dim">自定义北京日期:</span>';
+  H += '<input id="sc-ah-start" type="date" min="2026-08-04" max="' + scBjToday() + '" value="' + e(scAhStart) + '" style="padding:5px 7px;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  H += '<span class="dim">至</span><input id="sc-ah-end" type="date" min="2026-08-04" max="' + scBjToday() + '" value="' + e(scAhEnd) + '" style="padding:5px 7px;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  H += '<button class="btn btn-sm' + (scAhMode === 'range' ? ' btn-active' : '') + '" onclick="scAhCustom()">查询日期范围</button>';
+  H += '<span class="dim">可用历史从 2026-08-04 开始</span></div><div id="sc-ah-panel"></div></div>';
 
   if (!rows.length) {
     H += '<div class="empty-msg">没有符合条件的币。</div>';
@@ -2360,7 +2469,8 @@ function renderScreener() {
     H += '<th class="sortable" onclick="scSortBy(\'drawdown_60d\')">回撤60d</th>';
     H += '<th class="sortable" onclick="scSortBy(\'range_20d\')">横盘20d</th>';
     H += '<th class="sortable" onclick="scSortBy(\'vol_shrink_20d\')">缩量</th>';
-    H += '<th class="sortable" onclick="scSortBy(\'forward_score\')">评分</th>';
+    H += '<th class="sortable" onclick="scSortBy(\'forward_score\')" title="L1 吸筹评分 + L2 择时调整">评分</th>';
+    H += '<th title="L2 择时层自动标注（与 /api/timing 同一实现）">⏱择时</th>';
     H += '<th class="sortable" onclick="scSortBy(\'appear_count\')">出现次数</th>';
     H += '<th>信号</th><th>告警</th>';
     H += '</tr></thead><tbody>';
@@ -2378,7 +2488,11 @@ function renderScreener() {
       H += '<td class="mono">' + (r.drawdown_60d != null ? (r.drawdown_60d * 100).toFixed(0) + '%' : '—') + '</td>';
       H += '<td class="mono">' + (r.range_20d != null ? (r.range_20d * 100).toFixed(0) + '%' : '—') + '</td>';
       H += '<td class="mono">' + (r.vol_shrink_20d != null ? (r.vol_shrink_20d * 100).toFixed(0) + '%' : '—') + '</td>';
-      H += '<td class="mono score">' + (r.forward_score != null ? r.forward_score : '—') + '</td>';
+      H += '<td class="mono score">' + (r.forward_score != null ? r.forward_score : '—')
+        + (r.forward_score_base != null && r.forward_score_base !== r.forward_score
+            ? '<span class="dim" style="font-size:10px"> (' + r.forward_score_base + (r.timing_adj >= 0 ? '+' : '') + r.timing_adj + ')</span>'
+            : '') + '</td>';
+      H += '<td style="font-size:11px;max-width:190px">' + scTimingCell(r) + '</td>';
       H += '<td class="mono" style="' + (r.appear_count >= 10 ? 'color:#fbbf24;font-weight:800' : (r.appear_count >= 5 ? 'color:#f59e0b;font-weight:700' : 'color:#94a3b8')) + '">' + (r.appear_count > 0 ? r.appear_count + '次' : '—') + '</td>';
       H += '<td>' + scSigTag(r) + '</td>';
       H += '<td>' + scAlertHtml(r) + '</td>';
@@ -2386,9 +2500,178 @@ function renderScreener() {
     });
     H += '</tbody></table></div>';
   }
-  H += '<div class="fwd-foot dim">L0 环境闸门：BTC vs SMA20（验证：涨市 +0.8%/56%，跌市 -5.3%/31%）· L1 候选池：硬门槛五要素（dn10 3.3% vs 9.7% 下行保护）· L2 排除：事件回避(额/OI≥5, fwd5 -1.7%)/薄盘口/大后期/杀多/负费率拉盘 · L4 告警：ST-Spring/大阳线后盘整/放量+OI跟上/深负资费。叙事因子（大阳线/缓涨/Spring/资费）为 +1 加分，未统计验证。仅供研究参考，不构成投资建议。</div>';
+  H += '<div class="fwd-foot dim">L0 环境参考：BTC vs SMA20（已移除闸门 —— 全市场 200,065 样本验证：吸筹门槛+深底两制皆正 +0.46/+0.52pp）· L1 候选池：硬门槛五要素（dn10 3.3% vs 9.7% 下行保护）· L2 排除：事件回避(额/OI≥5, fwd5 -1.7%)/薄盘口/大后期/杀多/负费率拉盘 · L4 告警：ST-Spring/大阳线后盘整/放量+OI跟上/深负资费。叙事因子（大阳线/缓涨/Spring/资费）为 +1 加分，未统计验证。仅供研究参考，不构成投资建议。</div>';
   H += '</div>';
   root.innerHTML = H;
 }
+
+
+// ═══════════════════════════════════════════════════════════
+// ⏱ 择时层 视图（第 7 tab）— 「买跌不买涨」实测判据
+// 依据：919 个真实候选×天回测（2026-08-04..09-16，SlingLab 线上归档）
+//   5日涨 -15%~-5%  -> fwd3 +2.75%  5日最高 +16.0%  5日最低 -7.2%   ← 甜区
+//   5日涨 > +15%    -> fwd3 -7.23%  胜率 17%                          ← 追强禁令
+//   突破20日高       -> fwd3 -2.47%                                   ← 追强禁令
+// 数据: GET /api/timing（纯 KV 读取，零额外抓取）
+// ═══════════════════════════════════════════════════════════
+var timingData = null, timingLoaded = false, timingFilter = 'sweet', timingAutoTimer = null;
+
+function timingLoad() {
+  var root = document.getElementById('root');
+  root.innerHTML = '<div class="empty-msg">⏱ 正在加载择时数据（计算候选项 5 日涨幅）...</div>';
+  fetch(BASE + '/api/timing?days=10').then(function (r) { return r.json(); }).then(function (d) {
+    if (!d || !d.ok) throw new Error((d && d.error) || 'timing 无数据');
+    timingData = d;
+    timingLoaded = true;
+    renderTiming();
+    if (!timingAutoTimer) {
+      timingAutoTimer = setInterval(function () {
+        if (curTab !== 'timing') return;
+        fetch(BASE + '/api/timing?days=10').then(function (r) { return r.json(); }).then(function (x) {
+          if (x && x.ok) { timingData = x; if (curTab === 'timing') renderTiming(); }
+        }).catch(function () {});
+      }, 300000);
+    }
+  }).catch(function (err) {
+    root.innerHTML = '<div class="empty-msg">⏱ 择时数据加载失败: ' + e(err.message)
+      + '<br><br><button class="btn" onclick="timingLoad()">重试</button></div>';
+  });
+}
+
+function timingZoneClass(zone) {
+  if (zone.indexOf('★') >= 0) return 'color:#4ade80;font-weight:600';
+  if (zone.indexOf('✗') >= 0) return 'color:#f87171;font-weight:600';
+  if (zone.indexOf('⚠️') >= 0) return 'color:#fbbf24;font-weight:600';
+  if (zone.indexOf('过热') >= 0 || zone.indexOf('偏热') >= 0) return 'color:#fb923c';
+  return 'color:var(--text-muted,#889)';
+}
+
+function renderTiming() {
+  var root = document.getElementById('root');
+  if (!timingData) { root.innerHTML = '<div class="empty-msg">暂无数据</div>'; return; }
+  var d = timingData;
+  var all = d.data || [];
+  var rows = all;
+  if (timingFilter === 'deep') rows = all.filter(function (r) { return r.zone.indexOf('★深底') >= 0 || r.zone.indexOf('⚠️深底') >= 0; });
+  else if (timingFilter === 'ban') rows = all.filter(function (r) { return r.ban && r.ban.length > 0; });
+  else if (timingFilter === 'deepall') rows = all.filter(function (r) { return r.deep; });
+
+  var H = '';
+  // 说明卡（依据已更新为全市场 224,236 样本验证）
+  H += '<div style="padding:10px 14px;margin-bottom:10px;border:1px solid var(--border,#233);border-radius:10px;background:var(--surface-alt,#141924)">';
+  H += '<div style="font-size:13px;font-weight:600;margin-bottom:6px">⏱ 择时层 · 深底才是 alpha</div>';
+  H += '<div class="dim" style="font-size:11.5px;line-height:1.75">'
+    + '<span style="color:#4ade80;font-weight:600">★深底甜区</span> = 5日跌 5~15% <b>且</b> 距60日高 ≥50% 　'
+    + '全市场验证：深底+回落 fwd3 <b>+2.77%</b>，非深底同类样本 <b>-0.14%</b><br>'
+    + '<span style="color:#f87171;font-weight:600">✗追强禁令</span>（224,236 样本，涨跌市皆负）：'
+    + '5日涨&gt;30% 中位 <b>-5.75%</b>／1日涨&gt;20% 中位 <b>-7.06%</b>'
+    + '</div>';
+  H += '<div class="dim" style="font-size:11px;margin-top:6px">数据日期 ' + e(d.date || '') + ' · 候选 ' + d.count
+    + ' 个 · 深底甜区 ' + (d.deep_sweet_count != null ? d.deep_sweet_count : '--')
+    + ' 个 · 命中追强禁令 ' + (d.ban_count || 0) + ' 个</div>';
+  H += '</div>';
+
+  // 过滤器
+  function chip(k, label, n) {
+    var on = timingFilter === k;
+    return '<button class="btn" style="padding:3px 10px;margin-right:6px;font-size:11.5px;'
+      + (on ? 'background:#1e3a5f;border-color:#3b82f6;color:#93c5fd' : '') + '" '
+      + 'onclick="timingFilter=\'' + k + '\';renderTiming()">' + label + (n != null ? ' (' + n + ')' : '') + '</button>';
+  }
+  H += '<div style="margin-bottom:10px">'
+    + chip('deep', '★ 深底甜区', all.filter(function (r) { return r.zone.indexOf('★深底') >= 0 || r.zone.indexOf('⚠️深底') >= 0; }).length)
+    + chip('deepall', '深底（全）', all.filter(function (r) { return r.deep; }).length)
+    + chip('ban', '✗ 追强禁令', all.filter(function (r) { return r.ban && r.ban.length > 0; }).length)
+    + chip('all', '全部', all.length)
+    + '</div>';
+
+  // 表格（新增距60日高列）
+  H += '<div class="table-wrap"><table class="tbl fwd-tbl"><thead><tr>'
+    + '<th>币种</th><th>评分</th><th>现价</th><th>距60日高</th><th>1日</th><th>5日</th>'
+    + '<th>量能比</th><th>判定</th><th>禁令</th></tr></thead><tbody>';
+  if (!rows.length) {
+    H += '<tr><td colspan="9" class="dim" style="text-align:center;padding:16px">该分类下无标的</td></tr>';
+  }
+  rows.forEach(function (r) {
+    var ba = e(r.base_asset);
+    var pct = function (v) {
+      if (v == null) return '<span class="dim">--</span>';
+      var c = v >= 0 ? '#4ade80' : '#f87171';
+      return '<span style="color:' + c + '">' + (v >= 0 ? '+' : '') + (v * 100).toFixed(2) + '%</span>';
+    };
+    var banTxt = (r.ban && r.ban.length) ? '<span style="color:#f87171;font-size:11px">' + e(r.ban.join(' · ')) + '</span>' : '<span class="dim">—</span>';
+    var dd = r.dd60 != null
+      ? '<span style="color:' + (r.dd60 >= 0.5 ? '#4ade80' : (r.dd60 >= 0.3 ? '#fbbf24' : 'var(--text-muted,#889)'))
+        + ';font-weight:' + (r.dd60 >= 0.5 ? '600' : '400') + '">-' + (r.dd60 * 100).toFixed(0) + '%</span>'
+      : '<span class="dim">--</span>';
+    H += '<tr>'
+      + '<td><b>' + ba + '</b></td>'
+      + '<td class="mono">' + (r.forward_score != null ? r.forward_score : '<span class="dim">--</span>') + '</td>'
+      + '<td class="mono">' + fP(r.px) + '</td>'
+      + '<td class="mono">' + dd + '</td>'
+      + '<td>' + pct(r.ret1) + '</td>'
+      + '<td>' + pct(r.ret5) + '</td>'
+      + '<td class="mono">' + (r.vol_ratio != null ? r.vol_ratio.toFixed(2) + 'x' : '<span class="dim">--</span>') + '</td>'
+      + '<td style="' + timingZoneClass(r.zone) + '">' + e(r.zone) + '</td>'
+      + '<td>' + banTxt + '</td>'
+      + '</tr>';
+  });
+  H += '</tbody></table></div>';
+
+  // 诚实标注（已按全市场验证更新）
+  H += '<div class="dim" style="font-size:11px;margin-top:10px;line-height:1.75">'
+    + '📊 <b>依据</b>：全市场 689 币 × 500 天 = 224,236 样本 + 你的候选池 995 样本（2026-08-04..09-16）<br>'
+    + '⚠️ <b>关键修正</b>：单纯「5日跌」在全市场 <b>无超额</b>（-0.06pp）；'
+    + '只有叠加「距60日高≥50%」的<b>深底</b>条件才有效（+2.77%，n=163）。<br>'
+    + '✅ <b>追强禁令全市场通用</b>（涨跌市皆负），可无条件用于风控。<br>'
+    + '⚠️ <b>局限</b>：深底甜区样本仅 163，需继续积累；未含交易成本。'
+    + '</div>';
+  root.innerHTML = H;
+}
+
+// ── 挂接 Tab 切换（链式，晚于 forward/watchlist 等模块加载）──
+var __timingSwitchTab = (typeof switchTab === 'function') ? switchTab : null;
+switchTab = function (t) {
+  if (t === 'timing') {
+    curTab = t;
+    var tb = document.getElementById('tabbar');
+    if (tb) {
+      tb.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+      var btn = tb.querySelector('.tab-timing');
+      if (btn) btn.classList.add('active');
+    }
+    if (!timingLoaded) timingLoad(); else renderTiming();
+    return;
+  }
+  if (__timingSwitchTab) { __timingSwitchTab(t); return; }
+};
+
+var __timingRD = (typeof rD === 'function') ? rD : null;
+rD = function () {
+  if (curTab === 'timing') { renderTiming(); return; }
+  if (__timingRD) __timingRD();
+};
+// ═══════════════════════════════════════════════════════════
+// ⚡ 蓄水埋伏 视图（第 7 tab）— iframe 嵌入 edge-framework
+// 数据: https://app.slinglab.xyz/edge/（独立 Worker，VPS 自动推送）
+// ═══════════════════════════════════════════════════════════
+var __edgeSwitchTab = (typeof switchTab === 'function') ? switchTab : null;
+switchTab = function (t) {
+  if (t === 'edge') {
+    curTab = t;
+    var tb = document.getElementById('tabbar');
+    if (tb) {
+      tb.querySelectorAll('.tab-btn').forEach(function (b) { b.classList.remove('active'); });
+      var btn = tb.querySelector('.tab-edge');
+      if (btn) btn.classList.add('active');
+    }
+    var root = document.getElementById('root');
+    root.innerHTML = '<div style="padding:4px 0 12px"><div class="dim" style="font-size:12px;margin-bottom:8px">⚡ 蓄水埋伏 · 环境闸门 + OI低位/负资费/底部回撤候选 · 数据由日本 VPS 每 30 分钟自动推送</div><iframe src="https://app.slinglab.xyz/edge/" style="width:100%;height:calc(100vh - 180px);border:1px solid rgba(255,255,255,0.08);border-radius:10px;background:#0f1117"></iframe></div>';
+    return;
+  }
+  if (__edgeSwitchTab) { __edgeSwitchTab(t); return; }
+  if (t === 'demon' && typeof renderDemon === 'function') { renderDemon(); return; }
+  if (typeof rD === 'function') rD();
+};
 </script>
 </body></html>

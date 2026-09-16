@@ -2626,7 +2626,7 @@ async function hRD(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Key
 async function hDM(kv){const r=await kv.get('demon_data');if(!r)return json({ok:false,error:'no demon data',data:[],updated:null});const p=JSON.parse(r);const arr=Array.isArray(p)?p:p.data||[];return json({ok:true,updated:p.updated||null,data:arr,count:p.count||arr.length})}
 async function hRCF(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!b||!Array.isArray(b.data))return json({ok:false,error:'Must be {data:[...]}'},400);const rows=b.data;const usable=rows.filter(c=>c&&c.symbol&&c.base_asset&&Number.isFinite(c.price)&&Number.isFinite(c.oi_value)&&Number.isFinite(c.oi_contracts)).length;const minUsable=Math.max(100,Math.ceil(rows.length*0.8));if(rows.length<100||usable<minUsable)return json({ok:false,error:'Incomplete coinfilter snapshot rejected',quality:{row_count:rows.length,usable,min_usable:minUsable}},422);const n=b.updated||new Date().toISOString();const payload={data:rows,updated:n,count:rows.length,quality:{usable,coverage:Math.round(usable/rows.length*1000)/1000}};await kv.put('coinfilter_data',JSON.stringify(payload));if(Array.isArray(b.mentioned)&&b.mentioned.length>0){await kv.put('mentioned_list',JSON.stringify(b.mentioned)).catch(()=>{})}return json({ok:true,coins:rows.length,updated:n,quality:payload.quality})}catch(e){return json({ok:false,error:e.message},400)}}
 async function hCF(kv){const r=await kv.get('coinfilter_data');if(!r)return json({ok:false,error:'no coinfilter data',data:[],updated:null,count:0});const p=JSON.parse(r);const arr=Array.isArray(p)?p:p.data||[];return json({ok:true,updated:p.updated||null,count:p.count||arr.length,quality:p.quality||null,data:arr})}
-async function hRWF(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!b||!Array.isArray(b.data))return json({ok:false,error:'Must be {data:[...]}'},400);const rows=b.data;const structured=rows.filter(c=>c&&c.drawdown_60d!=null&&c.range_20d!=null&&c.vol_shrink_20d!=null).length;const envOk=!!(b.env&&typeof b.env.up==='boolean'&&Number.isFinite(b.env.close)&&Number.isFinite(b.env.sma20));const minStructured=Math.max(50,Math.ceil(rows.length*0.5));if(rows.length<100||structured<minStructured||!envOk)return json({ok:false,error:'Incomplete forward snapshot rejected',quality:{row_count:rows.length,structured,min_structured:minStructured,env_ok:envOk}},422);const n=b.updated||new Date().toISOString();const payload={data:rows,updated:n,count:rows.length,env:b.env,quality:{structured,coverage:Math.round(structured/rows.length*1000)/1000}};await kv.put('forward_data',JSON.stringify(payload));
+async function hRWF(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!b||!Array.isArray(b.data))return json({ok:false,error:'Must be {data:[...]}'},400);const rows=b.data;const structured=rows.filter(c=>c&&c.drawdown_60d!=null&&c.range_20d!=null&&c.vol_shrink_20d!=null).length;const envOk=!!(b.env&&typeof b.env.up==='boolean'&&Number.isFinite(b.env.close)&&Number.isFinite(b.env.sma20));const minStructured=Math.max(50,Math.ceil(rows.length*0.5));if(rows.length<100||structured<minStructured||!envOk)return json({ok:false,error:'Incomplete forward snapshot rejected',quality:{row_count:rows.length,structured,min_structured:minStructured,env_ok:envOk}},422);const n=b.updated||new Date().toISOString();const banned=await applyTimingBan(kv,rows).catch(e=>{console.error('timing ban error:',e.message);return 0});const payload={data:rows,updated:n,count:rows.length,env:b.env,quality:{structured,coverage:Math.round(structured/rows.length*1000)/1000}};await kv.put('forward_data',JSON.stringify(payload));
   // ── 每日候选池归档（fwd_hist_YYYYMMDD 北京日界=UTC+8，当日并集，覆盖写回）──
   try{
     const bj = new Date(new Date(n).getTime() + 8*3600*1000); const day = bj.toISOString().slice(0,10);
@@ -2669,7 +2669,7 @@ async function hRWF(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Ke
     ac.updated = n;
     await kv.put(acKey, JSON.stringify(ac));
   }catch(e){console.log('appear_count error:', e.message)}
-  return json({ok:true,coins:b.data.length,updated:n})}catch(e){return json({ok:false,error:e.message},400)}}
+  return json({ok:true,coins:b.data.length,updated:n,timing_banned:banned})}catch(e){return json({ok:false,error:e.message},400)}}
 async function hFH(kv,url){const days=Math.min(parseInt(new URL(url).searchParams.get('days')||'7',10)||7,60);const out={};const now=new Date();for(let i=0;i<days;i++){const bj=new Date(now.getTime()+8*3600*1000-i*86400000);const ds=bj.toISOString().slice(0,10);const r=await kv.get('fwd_hist_'+ds.replace(/-/g,''));if(r){try{const p=JSON.parse(r);out[ds]={candidates:p.candidates||[],updated:p.updated||null,count:(p.candidates||[]).length,seed:p.seed||false}}catch(e){}}}return json({ok:true,days,tz:'UTC+8',history:out})}
 // 🎯 重合统计：每日候选池 ∩ 当日涨幅榜（前N名，成交额≥minvol）
 async function hOV(kv,url){const u=new URL(url);const days=Math.min(parseInt(u.searchParams.get('days')||'14',10)||14,60);const topn=Math.min(parseInt(u.searchParams.get('topn')||'20',10)||20,100);const minvol=parseFloat(u.searchParams.get('minvol')||'0');const out={};const now=new Date();
@@ -2930,6 +2930,57 @@ async function hCH(kv,url){
 const TIMING_LOOKBACK=10;      // 计算 ret5 需 6 个价格点，取 10 天留冗余
 const TIMING_DEEP=0.50;        // 深底阈值（敏感性拐点）
 
+// 追强禁令/收益 —— hRWF（写入前降级）与 computeTiming（读时标注）共用，避免两处漂移
+function timingReturns(px){
+  let ret1=null,ret5=null;
+  if(px.length>=2&&px[1]>0) ret1=px[0]/px[1]-1;
+  if(px.length>=6&&px[5]>0) ret5=px[0]/px[5]-1;
+  return {ret1,ret5};
+}
+function timingBans(ret1,ret5){
+  const ban=[];
+  if(ret5!=null&&ret5>0.30) ban.push('5日涨>30%');
+  if(ret1!=null&&ret1>0.20) ban.push('1日涨>20%');
+  if(ret5!=null&&ret5>0.15) ban.push('5日涨>15%');
+  if(ret1!=null&&ret1>0.10) ban.push('1日涨>10%');
+  return ban;
+}
+// 写入前降级：命中追强禁令的 acc_candidate -> watch
+// 必须在 hRWF 落库前执行 —— forward_data / fwd_hist / appear_count 三处都按
+// signal==='acc_candidate' 过滤，若只在读时（hSC）降级会造成归档不一致。
+// 价格源 gainer_hist_*：relay 每轮先推 tickers（写归档）再推 forward，故此处可读到当日快照。
+async function applyTimingBan(kv, rows){
+  const days=[];
+  const now=Date.now();
+  for(let i=0;i<6;i++) days.push(new Date(now+8*3600*1000-i*86400000).toISOString().slice(0,10));
+  const raws=await Promise.all(days.map(d=>kv.get('gainer_hist_'+d.replace(/-/g,'')).catch(()=>null)));
+  const pxByDay={};
+  days.forEach((d,idx)=>{
+    if(!raws[idx]) return;
+    try{
+      const m={};
+      for(const x of (JSON.parse(raws[idx]).gainers||[])) if(x.last_price!=null) m[x.base_asset]=x.last_price;
+      pxByDay[d]=m;
+    }catch(e){}
+  });
+  let demoted=0;
+  for(const r of rows){
+    if(r.signal!=='acc_candidate') continue;
+    const px=[];
+    for(const d of days){ const m=pxByDay[d]; if(m&&m[r.base_asset]!=null) px.push(m[r.base_asset]); }
+    const {ret1,ret5}=timingReturns(px);
+    const ban=timingBans(ret1,ret5);
+    if(ban.length){
+      r.signal='watch';
+      r.timing_ban=ban;
+      r.ret1=ret1;
+      r.ret5=ret5;
+      demoted++;
+    }
+  }
+  return demoted;
+}
+
 async function computeTiming(kv, opts){
   const o=opts||{};
   const lookback=Math.min(Math.max(parseInt(o.lookback||TIMING_LOOKBACK,10)||TIMING_LOOKBACK,6),30);
@@ -2965,8 +3016,10 @@ async function computeTiming(kv, opts){
       for(const x of (Array.isArray(p)?p:(p.data||[]))){
         if(!x||!x.base_asset) continue;
         fwdMeta[x.base_asset]=x;
+        // 含被追强禁令降级为 watch 的行（x.timing_ban）—— 保留审计轨迹：
+        // 否则择时页的「✗追强禁令」过滤器恒为 0，被排除的币彻底不可见。
         if(x.signal==='acc_candidate'||x.effective_signal==='acc_candidate'
-           ||x.effective_signal==='acc_candidate_env_bear'){
+           ||x.effective_signal==='acc_candidate_env_bear'||(x.timing_ban&&x.timing_ban.length)){
           liveCands.push({base_asset:x.base_asset,symbol:x.symbol,
                           forward_score:x.forward_score,first_seen:x.first_seen||null});
         }
@@ -3002,12 +3055,8 @@ async function computeTiming(kv, opts){
       const avg=vols.slice(1).reduce((x,y)=>x+y,0)/(vols.length-1);
       if(avg>0) volRatio=vols[0]/avg;
     }
-    // 追强禁令（全市场验证，无条件生效）
-    const ban=[];
-    if(ret5!=null&&ret5>0.30) ban.push('5日涨>30%');
-    if(ret1!=null&&ret1>0.20) ban.push('1日涨>20%');
-    if(ret5!=null&&ret5>0.15) ban.push('5日涨>15%');
-    if(ret1!=null&&ret1>0.10) ban.push('1日涨>10%');
+    // 追强禁令（全市场验证，无条件生效；与 hRWF 写入前降级共用同一函数）
+    const ban=timingBans(ret1,ret5);
     // 深底判据
     const meta=fwdMeta[ba]||null;
     const dd60=(meta&&meta.drawdown_60d!=null)?meta.drawdown_60d:null;
