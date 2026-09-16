@@ -879,6 +879,83 @@ function fwdTagHtml(r) {
   return tags.join(' ');
 }
 
+// ── OI 24h：数值 + 三态着色 ──
+// 三态（数据指标篇）：OI↑价↑正常拉升（最舒适）/ OI↑价↓堆空（烟雾弹）/ OI↓价↑去杠杆（危险）
+function fwdOiCell(r) {
+  if (r.oi_24h_change_pct == null) return '<span class="dim">—</span>';
+  var v = r.oi_24h_change_pct;
+  var col = v >= 10 ? '#4ade80' : (v <= -50 ? '#f87171' : (v < 0 ? '#94a3b8' : '#a3e635'));
+  var w = (v >= 10 || v <= -50) ? '700' : '400';
+  var h = '<span style="color:' + col + ';font-weight:' + w + '">' + (v >= 0 ? '+' : '') + v.toFixed(1) + '%</span>';
+  if (r.oi_collapse) h += ' <span class="tag tag-danger" style="font-size:9px">崩塌</span>';
+  if (r.event_driven) h += ' <span class="tag tag-new" style="font-size:9px">🚀</span>';
+  var st = r.oi_state;
+  if (st === 'oi_down_price_up') h += '<br><span style="color:#f87171;font-size:9px">去杠杆</span>';
+  else if (st === 'oi_up_price_down') h += '<br><span style="color:#fbbf24;font-size:9px">堆空?</span>';
+  return h;
+}
+
+// ── OI/流通市值（镰刀·九）：>1 = 极端投机，价格发现已转移到衍生品 ──
+function fwdMcCell(r) {
+  if (r.oi_mc_ratio == null) return '<span class="dim" title="缺流通市值（CMC/CG 未覆盖）">—</span>';
+  var v = r.oi_mc_ratio;
+  var col = v >= 1 ? '#f87171' : (v >= 0.5 ? '#fbbf24' : '#94a3b8');
+  var w = v >= 1 ? '700' : '400';
+  return '<span style="color:' + col + ';font-weight:' + w + '" title="OI/流通市值">'
+    + v.toFixed(2) + (v >= 1 ? ' 极端' : '') + '</span>';
+}
+
+// ── 仓位层（P0）：单币上限 = min(均分, 盘口深度×0.1) ──
+// 依据：小币 edge skill「盘口极薄，几万U就能插飞几个点」+
+//      筛币器设计方案 L5「单币仓位名义 <= 盘口 -1% 深度 × 0.1」。
+// 为什么需要：$574 深度的币按均分买入，止损失效且自己就是滑点来源。
+// 盘口口径：orderbook_depth_usdt = Binance top5 档 bid+ask 名义总额。
+function fwdPositionPanel(rows) {
+  var cands = (rows || []).filter(function (r) { return r.effective_signal === 'acc_candidate' || r.forward_signal === 'acc_candidate'; });
+  if (!cands.length) return '';
+  cands.sort(function (a, b) { return (b.forward_score || 0) - (a.forward_score || 0); });
+  var cap = +(localStorage.getItem('fwd_capital') || 1000);
+  var npos = +(localStorage.getItem('fwd_npos') || 5);
+  var top = cands.slice(0, npos);
+  var each = cap / top.length;
+  var h = '<div class="calc-card" style="margin:8px 0">';
+  h += '<h3 style="font-size:13px">💵 仓位上限（盘口约束）</h3>';
+  h += '<div style="font-size:11px;margin-bottom:6px" class="dim">'
+    + '<input type="number" id="fwd-cap" value="' + cap + '" min="10" style="width:78px" oninput="fwdRecalcPos()"> 本金 · 持 '
+    + '<input type="number" id="fwd-npos" value="' + npos + '" min="1" max="20" style="width:48px" oninput="fwdRecalcPos()"> 币'
+    + ' · 均分 $' + each.toFixed(0) + '/币</div>';
+  h += '<table class="tbl" style="font-size:11px"><thead><tr><th>币</th><th>评分</th><th>盘口深度</th><th>上限(深度×0.1)</th><th>实际分配</th><th>受限?</th></tr></thead><tbody>';
+  for (var i = 0; i < top.length; i++) {
+    var r = top[i];
+    var d = r.orderbook_depth_usdt;
+    var lim = d != null ? d * 0.1 : null;
+    var alloc = lim != null ? Math.min(each, lim) : each;
+    var bind = (lim != null && lim < each);
+    h += '<tr>'
+      + '<td><b>' + e(r.base_asset) + '</b></td>'
+      + '<td>' + (r.forward_score != null ? r.forward_score : '—') + '</td>'
+      + '<td class="mono">' + (d != null ? '$' + Number(d).toLocaleString('en-US', { maximumFractionDigits: 0 }) : '—') + '</td>'
+      + '<td class="mono">' + (lim != null ? '$' + lim.toFixed(0) : '—') + '</td>'
+      + '<td class="mono" style="color:' + (bind ? '#f87171' : '#4ade80') + ';font-weight:' + (bind ? '700' : '400') + '">$' + alloc.toFixed(0) + '</td>'
+      + '<td>' + (bind ? '<span class="tag tag-danger" style="font-size:9px">盘口受限</span>' : '') + '</td>'
+      + '</tr>';
+  }
+  h += '</tbody></table>';
+  var tot = 0; for (var k = 0; k < top.length; k++) { var dd = top[k].orderbook_depth_usdt; var l2 = dd != null ? dd * 0.1 : each; tot += Math.min(each, l2); }
+  h += '<div class="dim" style="font-size:11px;margin-top:6px">合计占用 $' + tot.toFixed(0) + ' / $' + cap
+    + '（' + (cap > 0 ? (tot / cap * 100).toFixed(1) : '0') + '%）· 剩余 $' + (cap - tot).toFixed(0)
+    + ' · 未用满的部分是盘口上限强制的结果，不是建议加仓</div>';
+  h += '</div>';
+  return h;
+}
+function fwdRecalcPos() {
+  var c = document.getElementById('fwd-cap'), n = document.getElementById('fwd-npos');
+  if (c) localStorage.setItem('fwd_capital', c.value);
+  if (n) localStorage.setItem('fwd_npos', n.value);
+  renderForward();
+
+}
+
 // ── 观察池标记（localStorage）──
 function fwdWatchKey() { return 'fwd_watchlist'; }
 function fwdGetWatch() {
@@ -941,6 +1018,7 @@ function renderForward() {
   H += '<span class="dim" id="fwd-oi-status">' + (fwdOiMin != null || fwdOiMax != null ? '🔍 已过滤 OI ' + (fwdOiMin != null ? (fwdOiMin/1e6) : '0') + 'M ~ ' + (fwdOiMax != null ? (fwdOiMax/1e6) : '∞') + 'M' : '未过滤（全市场）') + '</span>';
   H += '</div>';
   H += '<div class="fwd-stats">🧭候选 ' + accN + ' · ⛔回避 ' + avoidN + ' · 👁已标记 ' + watchN + '</div>';
+  H += fwdPositionPanel(rows);
   H += fwdHistPanel();
 
   if (rows.length === 0) {
@@ -958,6 +1036,8 @@ function renderForward() {
     H += '<th class="sortable" onclick="fwdSortBy(\'near_low_20d\')">距低点</th>';
     H += '<th class="sortable" onclick="fwdSortBy(\'funding_rate_pct\')">资费%</th>';
     H += '<th class="sortable" onclick="fwdSortBy(\'days_since_listing\')">上线</th>';
+    H += '<th class="sortable" onclick="fwdSortBy(\'oi_24h_change_pct\')" title="OI 三态（数据指标篇）：OI↑价↑正常拉升 / OI↑价↓堆空 / OI↓价↑去杠杆 / OI↓价↓平仓">OI24h</th>';
+    H += '<th class="sortable" onclick="fwdSortBy(\'oi_mc_ratio\')" title="持仓量/流通市值（镰刀·九）：>1 为极强投机信号，价格发现已转移至衍生品">OI/MC</th>';
     H += '<th class="sortable" onclick="fwdSortBy(\'forward_score\')">评分</th>';
     H += '<th>信号</th><th></th>';
     H += '</tr></thead><tbody>';
@@ -978,6 +1058,8 @@ function renderForward() {
       H += '<td class="mono">' + (r.near_low_20d != null ? r.near_low_20d.toFixed(2) : '—') + '</td>';
       H += '<td class="mono">' + (r.funding_rate_pct != null ? r.funding_rate_pct.toFixed(3) + '%' : '—') + '</td>';
       H += '<td class="mono">' + (r.days_since_listing != null ? r.days_since_listing + 'd' : '—') + '</td>';
+      H += '<td class="mono" style="font-size:11px">' + fwdOiCell(r) + '</td>';
+      H += '<td class="mono" style="font-size:11px">' + fwdMcCell(r) + '</td>';
       H += '<td class="mono score">' + (r.forward_score != null ? r.forward_score : '—') + '</td>';
       H += '<td>' + fwdTagHtml(r) + '</td>';
       H += '<td><button class="btn btn-sm" onclick="fwdToggleWatch(\'' + jsStr(r.symbol) + '\')">' + (marked ? '取消' : '标记') + '</button></td>';
@@ -2672,7 +2754,7 @@ switchTab = function (t) {
       if (btn) btn.classList.add('active');
     }
     var root = document.getElementById('root');
-    root.innerHTML = '<div style="padding:4px 0 12px"><div class="dim" style="font-size:12px;margin-bottom:8px">⚡ 蓄水埋伏 · 环境闸门 + OI低位/负资费/底部回撤候选 · 数据由日本 VPS 每 30 分钟自动推送</div><iframe src="https://app.slinglab.xyz/edge/" style="width:100%;height:calc(100vh - 180px);border:1px solid rgba(255,255,255,0.08);border-radius:10px;background:#0f1117"></iframe></div>';
+    root.innerHTML = '<div style="padding:4px 0 12px"><div class="dim" style="font-size:12px;margin-bottom:8px">⚡ 蓄水埋伏 · <b>左侧扫描器</b>（OI 低位 + 负资费 + 底部回撤 = 找「还没启动」的候选，<b>不是进场触发</b>）· 数据由日本 VPS 每 30 分钟自动推送<br>⚠️ 进场触发（OI 首次放大 + 价格突破 + 放量）与离场（OI 崩塌）在 <b>🧭 筛币工作台</b> 的 OI24h 列与本页仓位面板</div><iframe src="https://app.slinglab.xyz/edge/" style="width:100%;height:calc(100vh - 180px);border:1px solid rgba(255,255,255,0.08);border-radius:10px;background:#0f1117"></iframe></div>';
     return;
   }
   if (__edgeSwitchTab) { __edgeSwitchTab(t); return; }

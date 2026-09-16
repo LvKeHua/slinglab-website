@@ -3176,7 +3176,7 @@ for(const d of daily){if(d.f1_mean!=null){agg.f1.push(d.f1_mean);nDays++;}if(d.f
 const mean=a=>a.length?Math.round(a.reduce((x,y)=>x+y,0)/a.length*10000)/10000:null;
 const summary={n_days:nDays,f1_mean:mean(agg.f1),f3_mean:mean(agg.f3),f5_mean:mean(agg.f5),excess_f3_mean:mean(agg.ex3),win3:mean(daily.filter(d=>d.f3_mean!=null).map(d=>d.f3_win))};
 return json({ok:true,days,tz:'UTC+8',daily,summary,note:'fwd 收益基于每日收盘价快照（last_price）；fwd 为入选日收盘到 +N 日收盘；excess=候选均值-BTC'})}
-async function hFW(kv){const r=await kv.get('forward_data');if(!r)return json({ok:false,error:'no forward data',data:[],updated:null,count:0});const p=JSON.parse(r);const arr=Array.isArray(p)?p:p.data||[];return json({ok:true,updated:p.updated||null,count:p.count||arr.length,env:p.env||null,data:arr})}
+async function hFW(kv){const r=await kv.get('forward_data');if(!r)return json({ok:false,error:'no forward data',data:[],updated:null,count:0});const p=JSON.parse(r);const arr=Array.isArray(p)?p:p.data||[];const [dr,cr]=await Promise.all([kv.get('data'),kv.get('coinfilter_data')]);const bm={};if(dr){try{const d=JSON.parse(dr);(Array.isArray(d)?d:d.data||[]).forEach(c=>{if(c.base_asset)bm[c.base_asset]=c})}catch(e){}}const cm={};if(cr){try{const d=JSON.parse(cr);(Array.isArray(d)?d:d.data||[]).forEach(c=>{if(c.base_asset)cm[c.base_asset]=c})}catch(e){}}for(const x of arr){const b=bm[x.base_asset]||{},c=cm[x.base_asset]||{};x.market_cap=b.market_cap!=null?b.market_cap:null;x.orderbook_depth_usdt=c.orderbook_depth_usdt!=null?c.orderbook_depth_usdt:null;x.oi_mc_ratio=(x.oi_value!=null&&b.market_cap>0)?Math.round(x.oi_value/b.market_cap*10000)/10000:null;x.effective_signal=x.signal;}return json({ok:true,updated:p.updated||null,count:p.count||arr.length,env:p.env||null,data:arr})}
 async function hML(kv){const r=await kv.get('mentioned_list');if(!r)return json({ok:false,error:'no mentioned list',mentioned:[]});try{return json({ok:true,mentioned:JSON.parse(r)})}catch(e){return json({ok:false,error:e.message,mentioned:[]})}}
 // 📡 他提过：合并 data(市值/量) + coinfilter(OI/资费/信号) + forward(吸筹评分)，按名单过滤
 // 🧭 筛币工作台：L0 环境闸门 + L1 候选池 + L2 排除层 + L4 告警（服务端计算）
@@ -3224,9 +3224,18 @@ async function hSC(kv){
     const alerts=[];
     if(f.spring_test)alerts.push('ST/Spring');
     if(f.breakout_consolidation)alerts.push('大阳线后盘整');
-    if(c.oi_24h_change_pct!=null&&c.oi_24h_change_pct>2&&volOi!=null&&volOi>=5)alerts.push('放量+OI跟上');
+    const oiChg=f.oi_24h_change_pct!=null?f.oi_24h_change_pct:c.oi_24h_change_pct;
+    if(oiChg!=null&&oiChg>2&&volOi!=null&&volOi>=5)alerts.push('放量+OI跟上');
     if(fund!=null&&fund<-0.05)alerts.push('深负资费');
-    rows.push({symbol:c.symbol||f.symbol||sym+'USDT',base_asset:sym,price,change_24h_pct:chg,volume_24h_usdt:vol,market_cap:b.market_cap!=null?b.market_cap:null,oi_value:oi,volume_oi_ratio:volOi,funding_rate_pct:fund,orderbook_depth_usdt:c.orderbook_depth_usdt!=null?c.orderbook_depth_usdt:null,oi_stage_label:c.oi_stage_label||null,tags:c.tags||[],forward_score:score,forward_signal:sig,effective_signal:effSig,drawdown_60d:f.drawdown_60d,range_20d:f.range_20d,vol_shrink_20d:f.vol_shrink_20d,near_low_20d:f.near_low_20d,big_move_5d:f.big_move_5d,spring_test:!!f.spring_test,breakout_consolidation:!!f.breakout_consolidation,oi_24h_change_pct:c.oi_24h_change_pct!=null?c.oi_24h_change_pct:null,thin_book:thinBook,distribution,kill_longs:killLongs,event_day:eventDay,neg_fund_pump:negFundPump,appear_count:appear[sym]||0,alerts,timing_ban_stored:(f.timing_ban&&f.timing_ban.length)?f.timing_ban:null});
+    // ★ OI 崩塌 = 唯一硬离场信号（妖币埋伏手册：LSK 09-13 −62.3%）
+    if(f.oi_collapse)alerts.push('⚠️OI崩塌');
+    // ★ 事件驱动：OI 首次放大 + 突破 + 放量（A 方进场触发；与吸筹通道并列）
+    if(f.event_driven)alerts.push('🚀OI放大+突破');
+    // ★ OI↑价↓ = MM 堆空（烟雾弹或真实做空，需 CVD 确认；本项目无 CVD 故只标注）
+    if(f.oi_state==='oi_up_price_down')alerts.push('OI↑价↓(堆空?)');
+    // ★ OI↓价↑ = 去杠杆（庄平多、散户接盘，危险）
+    if(f.oi_state==='oi_down_price_up')alerts.push('OI↓价↑(去杠杆)');
+    rows.push({symbol:c.symbol||f.symbol||sym+'USDT',base_asset:sym,price,change_24h_pct:chg,volume_24h_usdt:vol,market_cap:b.market_cap!=null?b.market_cap:null,oi_value:oi,volume_oi_ratio:volOi,funding_rate_pct:fund,orderbook_depth_usdt:c.orderbook_depth_usdt!=null?c.orderbook_depth_usdt:null,oi_stage_label:c.oi_stage_label||null,tags:c.tags||[],forward_score:score,forward_signal:sig,effective_signal:effSig,drawdown_60d:f.drawdown_60d,range_20d:f.range_20d,vol_shrink_20d:f.vol_shrink_20d,near_low_20d:f.near_low_20d,big_move_5d:f.big_move_5d,spring_test:!!f.spring_test,breakout_consolidation:!!f.breakout_consolidation,oi_24h_change_pct:f.oi_24h_change_pct!=null?f.oi_24h_change_pct:(c.oi_24h_change_pct!=null?c.oi_24h_change_pct:null),oi_state:f.oi_state||null,oi_collapse:!!f.oi_collapse,event_driven:!!f.event_driven,vol_x30:f.vol_x30!=null?f.vol_x30:null,oi_mc_ratio:(oi!=null&&b.market_cap!=null&&b.market_cap>0)?Math.round(oi/b.market_cap*10000)/10000:null,thin_book:thinBook,distribution,kill_longs:killLongs,event_day:eventDay,neg_fund_pump:negFundPump,appear_count:appear[sym]||0,alerts,timing_ban_stored:(f.timing_ban&&f.timing_ban.length)?f.timing_ban:null});
   }
   // ⚡ L1→L2 自动串联：把择时标签合并进候选行（与 /api/timing 同一实现，不会漂移）
   let timingMeta=null;
