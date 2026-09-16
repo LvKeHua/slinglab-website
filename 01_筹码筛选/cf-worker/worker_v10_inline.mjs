@@ -2931,6 +2931,31 @@ const TIMING_LOOKBACK=10;      // 计算 ret5 需 6 个价格点，取 10 天留
 const TIMING_DEEP=0.50;        // 深底阈值（敏感性拐点）
 
 // 追强禁令/收益 —— hRWF（写入前降级）与 computeTiming（读时标注）共用，避免两处漂移
+// ⚠️ 窗口长度必须两边一致（均取 TIMING_LOOKBACK）：曾出现 applyTimingBan 硬编码 6 天、
+// computeTiming 用 10 天 —— 某币近 6 天有缺档而 7-10 天有数据时，写入端凑不齐 6 个点
+// 算不出 ret5（不判禁），读时端却能算出（判禁），同一币同一时刻两路径判定相反。
+// 统一取 10 天（而非把读时端收窄到 6 天）：10 天窗口的「取最近 6 个可用点」是
+// computeTiming 的既有语义（抗缺档），收窄会改变 volRatio 进而扰动 zone 分档。
+function timingDayKeys(n){
+  const days=[];
+  const now=Date.now();
+  for(let i=0;i<n;i++) days.push(new Date(now+8*3600*1000-i*86400000).toISOString().slice(0,10));
+  return days;
+}
+// 从 gainer_hist_* 归档构建 base_asset -> 价格序列（日序 新->旧）
+async function timingPriceSeries(kv,days){
+  const raws=await Promise.all(days.map(d=>kv.get('gainer_hist_'+d.replace(/-/g,'')).catch(()=>null)));
+  const pxByDay={};
+  days.forEach((d,idx)=>{
+    if(!raws[idx]) return;
+    try{
+      const m={};
+      for(const x of (JSON.parse(raws[idx]).gainers||[])) if(x.last_price!=null) m[x.base_asset]=x.last_price;
+      pxByDay[d]=m;
+    }catch(e){}
+  });
+  return pxByDay;
+}
 function timingReturns(px){
   let ret1=null,ret5=null;
   if(px.length>=2&&px[1]>0) ret1=px[0]/px[1]-1;
@@ -2950,19 +2975,8 @@ function timingBans(ret1,ret5){
 // signal==='acc_candidate' 过滤，若只在读时（hSC）降级会造成归档不一致。
 // 价格源 gainer_hist_*：relay 每轮先推 tickers（写归档）再推 forward，故此处可读到当日快照。
 async function applyTimingBan(kv, rows){
-  const days=[];
-  const now=Date.now();
-  for(let i=0;i<6;i++) days.push(new Date(now+8*3600*1000-i*86400000).toISOString().slice(0,10));
-  const raws=await Promise.all(days.map(d=>kv.get('gainer_hist_'+d.replace(/-/g,'')).catch(()=>null)));
-  const pxByDay={};
-  days.forEach((d,idx)=>{
-    if(!raws[idx]) return;
-    try{
-      const m={};
-      for(const x of (JSON.parse(raws[idx]).gainers||[])) if(x.last_price!=null) m[x.base_asset]=x.last_price;
-      pxByDay[d]=m;
-    }catch(e){}
-  });
+  const days=timingDayKeys(TIMING_LOOKBACK);
+  const pxByDay=await timingPriceSeries(kv,days);
   let demoted=0;
   for(const r of rows){
     if(r.signal!=='acc_candidate') continue;
@@ -3212,22 +3226,29 @@ async function hSC(kv){
     if(f.breakout_consolidation)alerts.push('大阳线后盘整');
     if(c.oi_24h_change_pct!=null&&c.oi_24h_change_pct>2&&volOi!=null&&volOi>=5)alerts.push('放量+OI跟上');
     if(fund!=null&&fund<-0.05)alerts.push('深负资费');
-    rows.push({symbol:c.symbol||f.symbol||sym+'USDT',base_asset:sym,price,change_24h_pct:chg,volume_24h_usdt:vol,market_cap:b.market_cap!=null?b.market_cap:null,oi_value:oi,volume_oi_ratio:volOi,funding_rate_pct:fund,orderbook_depth_usdt:c.orderbook_depth_usdt!=null?c.orderbook_depth_usdt:null,oi_stage_label:c.oi_stage_label||null,tags:c.tags||[],forward_score:score,forward_signal:sig,effective_signal:effSig,drawdown_60d:f.drawdown_60d,range_20d:f.range_20d,vol_shrink_20d:f.vol_shrink_20d,near_low_20d:f.near_low_20d,big_move_5d:f.big_move_5d,spring_test:!!f.spring_test,breakout_consolidation:!!f.breakout_consolidation,oi_24h_change_pct:c.oi_24h_change_pct!=null?c.oi_24h_change_pct:null,thin_book:thinBook,distribution,kill_longs:killLongs,event_day:eventDay,neg_fund_pump:negFundPump,appear_count:appear[sym]||0,alerts});
+    rows.push({symbol:c.symbol||f.symbol||sym+'USDT',base_asset:sym,price,change_24h_pct:chg,volume_24h_usdt:vol,market_cap:b.market_cap!=null?b.market_cap:null,oi_value:oi,volume_oi_ratio:volOi,funding_rate_pct:fund,orderbook_depth_usdt:c.orderbook_depth_usdt!=null?c.orderbook_depth_usdt:null,oi_stage_label:c.oi_stage_label||null,tags:c.tags||[],forward_score:score,forward_signal:sig,effective_signal:effSig,drawdown_60d:f.drawdown_60d,range_20d:f.range_20d,vol_shrink_20d:f.vol_shrink_20d,near_low_20d:f.near_low_20d,big_move_5d:f.big_move_5d,spring_test:!!f.spring_test,breakout_consolidation:!!f.breakout_consolidation,oi_24h_change_pct:c.oi_24h_change_pct!=null?c.oi_24h_change_pct:null,thin_book:thinBook,distribution,kill_longs:killLongs,event_day:eventDay,neg_fund_pump:negFundPump,appear_count:appear[sym]||0,alerts,timing_ban_stored:(f.timing_ban&&f.timing_ban.length)?f.timing_ban:null});
   }
   // ⚡ L1→L2 自动串联：把择时标签合并进候选行（与 /api/timing 同一实现，不会漂移）
   let timingMeta=null;
   try{
     const t=await computeTiming(kv,{lookback:TIMING_LOOKBACK});
     const byAsset=t.byAsset||{};
-    let tagged=0,banned=0;
+    let tagged=0,banned=0,diverged=0;
     for(const r of rows){
       const x=byAsset[r.base_asset];
       if(!x) continue;
       r.timing_zone=x.zone;
       r.timing_adj=x.timing_adj;
-      r.timing_ban=x.ban;
       r.ret1=x.ret1;
       r.ret5=x.ret5;
+      // ★ 判定优先级：存储判定 > 读时重算
+      // 写入时刻与读取时刻不同（relay 推送 vs 请求），跨 UTC+8 日界时窗口整体位移，
+      // 读时重算会给出与「已落库的 signal + 已归档的 fwd_hist/appear_count」不同的结论。
+      // 若让读时覆盖，会出现「signal=acc_candidate 但 timing_ban 非空」这类自相矛盾的行，
+      // 且与归档不一致。故存储判定优先；读时判定单独暴露，仅用于观测分叉。
+      r.timing_ban=r.timing_ban_stored;
+      r.timing_ban_now=x.ban;
+      if((r.timing_ban_stored&&r.timing_ban_stored.length?1:0)!==(x.ban&&x.ban.length?1:0))diverged++;
       r.vol_ratio=x.vol_ratio;
       r.timing_deep=x.deep;
       r.timing_pts=x.pts;
@@ -3240,7 +3261,7 @@ async function hSC(kv){
       if(x.ban.length>0) banned++;
     }
     timingMeta={ok:true,date:t.date,cand_source:t.candSource,tagged,
-                banned,deep_threshold:t.deepThreshold};
+                banned,diverged,deep_threshold:t.deepThreshold};
   }catch(e){
     // 择时失败不阻断主接口（降级：candidates 照常返回，只是没有 timing_* 字段）
     timingMeta={ok:false,error:String(e&&e.message||e)};

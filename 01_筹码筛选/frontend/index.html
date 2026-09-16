@@ -875,6 +875,7 @@ function fwdTagHtml(r) {
   if (r.days_since_listing != null && r.days_since_listing <= 180) tags.push('<span class="tag tag-new">新上</span>');
   // 择时追强禁令：relay 推送前已由 applyTimingBan 降级为 watch，这里标出降级原因
   if (r.timing_ban && r.timing_ban.length) tags.push('<span class="tag tag-danger">⛔' + e(r.timing_ban.join('·')) + '</span>');
+  else if (r.timing_ban_now && r.timing_ban_now.length) tags.push('<span class="tag tag-watch">⚠️当前触发' + e(r.timing_ban_now.join('·')) + '</span>');
   return tags.join(' ');
 }
 
@@ -2388,6 +2389,11 @@ function scTimingCell(r) {
   }
   if (r.timing_ban && r.timing_ban.length) {
     h += '<br><span style="color:#f87171;font-size:10px">⛔' + e(r.timing_ban.join('·')) + '</span>';
+  }
+  // 读时重算与已落库判定不一致 → 显式暴露，不静默（跨日界/归档缺档时会触发）
+  if (r.timing_ban_now && r.timing_ban_now.length && !(r.timing_ban && r.timing_ban.length)) {
+    h += '<br><span style="color:#fbbf24;font-size:10px">⚠️当前已触发' + e(r.timing_ban_now.join('·'))
+      + '（未降级：推送时未触发）</span>';
   }
   return h;
 }
