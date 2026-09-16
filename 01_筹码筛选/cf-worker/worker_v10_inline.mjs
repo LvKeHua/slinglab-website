@@ -566,7 +566,9 @@ H+="<div class=\\"calc-card\\"><h3>资金分配器</h3><p style=\\"font-size:.75
 H+="</div></div><div class=\\"footer\\">⚠️ 仅供研究参考，不构成投资建议<br>最后更新 "+us+"</div>";
 el.innerHTML=H;sS();cf();}
 function cP(){pa="";mcMin=null;mcMax=null;crMin=null;crMax=null;mA=null;mR=null;sS();aF();}
-async function rf(){try{await fetch(BASE+"/api/refresh",{method:"POST"});}catch(e){}load();}
+// 刷新数据：/api/refresh 已改为服务端鉴权（仅 relay 用 X-Auth-Key 调用），
+// 浏览器点按改为重新拉取当前 KV 快照（数据由 relay 每 5 分钟推送）。
+function rf(){load();}
 function cf(){if(!hasBybit){var el=document.getElementById("calc-result");if(el)el.innerHTML="<div class=\\"calc-result\\" style=\\"color:var(--text-muted)\\">缺少价格数据，连接Bybit后可启用资金分配器</div>";return;}var el=document.getElementById("calc-result");if(!el)return;
 var cap=+document.getElementById("capital").value||1000;var np=+document.getElementById("npos").value||5;
 var top=fl.concat().sort(function(a,b){if(b.star_rating!==a.star_rating)return b.star_rating-a.star_rating;return (a.circulating_ratio||1)-(b.circulating_ratio||1);}).slice(0,np);
@@ -880,6 +882,17 @@ function fwdWatchKey() { return 'fwd_watchlist'; }
 function fwdGetWatch() {
   try { return JSON.parse(localStorage.getItem(fwdWatchKey()) || '{}'); } catch (e) { return {}; }
 }
+// JS 字符串字面量转义：用于把 symbol 等外部数据放进 onclick='...'。
+// 此前直接拼接，symbol 含单引号即可逃逸出字符串执行任意 JS（数据来自交易所 API）。
+function jsStr(v) {
+  return String(v)
+    .replace(/\\/g, '\\\\')
+    .replace(/'/g, "\\'")
+    .replace(/\r?\n/g, '')
+    .replace(/</g, '\\x3c')
+    .replace(/"/g, '\\x22');
+}
+
 function fwdToggleWatch(sym) {
   var w = fwdGetWatch();
   if (w[sym]) delete w[sym]; else w[sym] = Date.now();
@@ -966,7 +979,7 @@ function renderForward() {
       H += '<td class="mono">' + (r.days_since_listing != null ? r.days_since_listing + 'd' : '—') + '</td>';
       H += '<td class="mono score">' + (r.forward_score != null ? r.forward_score : '—') + '</td>';
       H += '<td>' + fwdTagHtml(r) + '</td>';
-      H += '<td><button class="btn btn-sm" onclick="fwdToggleWatch(\\'' + r.symbol + '\\')">' + (marked ? '取消' : '标记') + '</button></td>';
+      H += '<td><button class="btn btn-sm" onclick="fwdToggleWatch(\\'' + jsStr(r.symbol) + '\\')">' + (marked ? '取消' : '标记') + '</button></td>';
       H += '</tr>';
     });
     H += '</tbody></table></div>';
@@ -1881,55 +1894,90 @@ function renderCoinfilter(container) {
 // 规则: 硬门槛五要素(下行保护 dn10 3.3%) + 强度分(叙事+1) + 事件回避(-3, fwd5 -1.7%)
 // ═══════════════════════════════════════════════════════════
 var scData = [], scLoaded = false, scTag = '', scSort = 'forward_score', scAsc = false, scAppearTotal = 0;
-// 历史出现面板
-var scAhHours = 24, scAhCache = {};
-function scAhSet(h) { scAhHours = h; scAhLoad(); }
+var scEnv = null, scSources = null, scUpdated = null, scStale = true;
+// 历史出现面板：快捷窗口 + 任意北京日期范围 + 全部归档。
+var scAhMode = 'hours', scAhHours = 24, scAhStart = '2026-08-04', scAhEnd = scBjToday(), scAhCache = {};
+
+function scBjToday() {
+  return new Date(Date.now() + 8 * 3600000).toISOString().slice(0, 10);
+}
+
+function scAhPreset(mode, value) {
+  scAhMode = mode;
+  if (mode === 'hours') scAhHours = value;
+  renderScreener();
+  scAhLoad();
+}
+
+function scAhCustom() {
+  var start = document.getElementById('sc-ah-start');
+  var end = document.getElementById('sc-ah-end');
+  if (!start || !end || !start.value || !end.value) return;
+  if (start.value > end.value) {
+    document.getElementById('sc-ah-panel').innerHTML = '<div class="empty-msg" style="padding:14px">开始日期不能晚于结束日期</div>';
+  } else {
+    scAhStart = start.value;
+    scAhEnd = end.value;
+    scAhMode = 'range';
+    renderScreener();
+    scAhLoad();
+  }
+}
+function scAhRequest() {
+  if (scAhMode === 'all') return { key: 'all', url: BASE + '/api/appear-history?all=1' };
+  if (scAhMode === 'range') return { key: scAhStart + ':' + scAhEnd, url: BASE + '/api/appear-history?start=' + encodeURIComponent(scAhStart) + '&end=' + encodeURIComponent(scAhEnd) };
+  return { key: 'h:' + scAhHours, url: BASE + '/api/appear-history?hours=' + scAhHours };
+}
+
 function scAhLoad() {
   var panel = document.getElementById('sc-ah-panel');
   var status = document.getElementById('sc-ah-status');
   if (!panel) return;
-  if (scAhCache[scAhHours]) { scAhRender(scAhCache[scAhHours]); return; }
-  panel.innerHTML = '<div class="empty-msg" style="padding:14px">🕘 正在查询 ' + scAhHours + ' 小时内入选过的币...</div>';
+  var request = scAhRequest();
+  if (scAhCache[request.key]) { scAhRender(scAhCache[request.key]); return; }
+  var controller = new AbortController();
+  var timer = setTimeout(function () { controller.abort(); }, 20000);
+  panel.innerHTML = '<div class="empty-msg" style="padding:14px">正在查询历史候选归档...</div>';
   if (status) status.innerHTML = '';
-  fetch(BASE + '/api/appear-history?hours=' + scAhHours).then(function (r) { return r.json(); }).then(function (d) {
-    if (d.error) throw new Error(d.error);
-    scAhCache[scAhHours] = d;
-    scAhRender(d);
-  }).catch(function (err) {
-    panel.innerHTML = '<div class="empty-msg" style="padding:14px">查询失败: ' + e(err.message) + ' <button class="btn btn-sm" onclick="scAhLoad()">重试</button></div>';
-  });
+  fetch(request.url + (request.url.indexOf('?') >= 0 ? '&' : '?') + 't=' + Date.now(), { cache: 'no-store', signal: controller.signal }).then(function (response) {
+    if (!response.ok) throw new Error('HTTP ' + response.status);
+    return response.json();
+  }).then(function (data) {
+    if (data.error) throw new Error(data.error);
+    scAhCache[request.key] = data;
+    scAhStart = data.start || scAhStart;
+    scAhEnd = data.end || scAhEnd;
+    scAhRender(data);
+  }).catch(function (error) {
+    var message = error.name === 'AbortError' ? '请求超时（20秒）' : error.message;
+    panel.innerHTML = '<div class="empty-msg" style="padding:14px">查询失败: ' + e(message) + ' <button class="btn btn-sm" onclick="scAhLoad()">重试</button></div>';
+  }).finally(function () { clearTimeout(timer); });
 }
-function scAhRender(d) {
+
+function scAhRender(data) {
   var panel = document.getElementById('sc-ah-panel');
   var status = document.getElementById('sc-ah-status');
   if (!panel) return;
-  if (status) status.innerHTML = '共 ' + d.count + ' 个币';
-  var rows = d.data || [];
+  var range = (data.start || '—') + ' 至 ' + (data.end || '—');
+  if (status) status.innerHTML = '共 ' + data.count + ' 个币 · ' + range + ' · 有归档 ' + (data.archive_days || 0) + '/' + (data.selected_days || 0) + ' 天';
+  var rows = data.data || [];
   if (!rows.length) { panel.innerHTML = '<div class="empty-msg" style="padding:14px">该时间范围内没有币入选过候选池</div>'; return; }
-  var H = '<div class="table-wrap" style="margin-top:6px"><table class="tbl fwd-tbl"><thead><tr>';
-  H += '<th>币种</th><th>首次入选</th><th>最后入选</th><th>入选天数</th><th>出现次数</th><th>最高评分</th><th></th>';
-  H += '</tr></thead><tbody>';
-  rows.forEach(function (r) {
-    var fs = r.first_seen, ls = r.last_seen;
-    function fmt(iso) {
-      if (!iso) return '—';
-      var t = new Date(iso);
-      if (isNaN(t.getTime())) return iso;
-      var bj = new Date(t.getTime() + 8 * 3600 * 1000);
-      return ('0' + (bj.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + bj.getUTCDate()).slice(-2) + ' ' + ('0' + bj.getUTCHours()).slice(-2) + ':' + ('0' + bj.getUTCMinutes()).slice(-2);
-    }
-    H += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04)">';
-    H += '<td class="mono"><b>' + e(r.base_asset) + '</b></td>';
-    H += '<td class="mono" style="font-size:11px;color:#94a3b8">' + fmt(fs) + '</td>';
-    H += '<td class="mono" style="font-size:11px;color:#34d399">' + fmt(ls) + '</td>';
-    H += '<td class="mono">' + r.days + '天</td>';
-    H += '<td class="mono" style="' + (r.appear_count >= 10 ? 'color:#fbbf24;font-weight:800' : (r.appear_count >= 5 ? 'color:#f59e0b;font-weight:700' : 'color:#94a3b8')) + '">' + (r.appear_count > 0 ? r.appear_count + '次' : '—') + '</td>';
-    H += '<td class="mono score">' + (r.best_score != null ? r.best_score : '—') + '</td>';
-    H += '<td><button class="btn btn-sm" onclick="evJump(\\'' + r.base_asset + '\\')">查看</button></td>';
-    H += '</tr>';
+  function fmt(iso) {
+    if (!iso) return '—';
+    var time = new Date(iso);
+    if (isNaN(time.getTime())) return iso;
+    var bj = new Date(time.getTime() + 8 * 3600000);
+    return bj.getUTCFullYear() + '-' + ('0' + (bj.getUTCMonth() + 1)).slice(-2) + '-' + ('0' + bj.getUTCDate()).slice(-2) + ' ' + ('0' + bj.getUTCHours()).slice(-2) + ':' + ('0' + bj.getUTCMinutes()).slice(-2);
+  }
+  var html = '<div class="table-wrap" style="margin-top:6px"><table class="tbl fwd-tbl"><thead><tr><th>币种</th><th>首次入选</th><th>最后入选</th><th>入选天数</th><th>出现次数</th><th>最高评分</th><th></th></tr></thead><tbody>';
+  rows.forEach(function (row) {
+    var count = row.appear_count == null ? '—' : row.appear_count + '次';
+    var countStyle = row.appear_count >= 10 ? 'color:#fbbf24;font-weight:800' : (row.appear_count >= 5 ? 'color:#f59e0b;font-weight:700' : 'color:#94a3b8');
+    html += '<tr style="border-bottom:1px solid rgba(255,255,255,0.04)"><td class="mono"><b>' + e(row.base_asset) + '</b></td><td class="mono" style="font-size:11px;color:#94a3b8">' + fmt(row.first_seen) + '</td><td class="mono" style="font-size:11px;color:#34d399">' + fmt(row.last_seen) + '</td><td class="mono">' + row.days + '天</td><td class="mono" style="' + countStyle + '">' + count + '</td><td class="mono score">' + (row.best_score != null ? row.best_score : '—') + '</td><td><button class="btn btn-sm" onclick="evJump(\\'' + row.base_asset + '\\')">查看</button></td></tr>';
   });
-  H += '</tbody></table></div>';
-  panel.innerHTML = H;
+  html += '</tbody></table></div>';
+  if (!data.appear_count_complete) html += '<div class="dim" style="font-size:11px;margin-top:6px">出现次数只在有逐次计数归档的日期精确；更早日期显示“—”。首次/最后入选、入选天数和最高评分来自每日候选归档。</div>';
+  panel.innerHTML = html;
 }
 // OI 范围自定义（客户端过滤，默认不设限 = 全市场，逻辑不变）
 var scOiMin = null, scOiMax = null;
@@ -2229,20 +2277,29 @@ setInterval(function () {
 
 function scLoad() {
   var root = document.getElementById('root');
+  var controller = new AbortController();
+  var timer = setTimeout(function () { controller.abort(); }, 20000);
   root.innerHTML = '<div class="empty-msg">🧭 正在加载筛币工作台（L0 环境闸门 + 候选池 + 排除层 + 告警）...</div>';
-  fetch(BASE + '/api/screener').then(function (r) { return r.json(); }).then(function (d) {
+  fetch(BASE + '/api/screener?t=' + Date.now(), { cache: 'no-store', signal: controller.signal }).then(function (r) {
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    return r.json();
+  }).then(function (d) {
     var rows = d.data || [];
     if (d.error && !rows.length) throw new Error(d.error);
     scData = rows;
     scEnv = d.env || null;
+    scSources = d.sources || null;
+    scUpdated = d.updated || null;
+    scStale = !!d.stale;
     scAppearTotal = d.appear_total || 0;
+    scAhCache = {};
     scLoaded = true;
     renderScreener();
   }).catch(function (err) {
-    root.innerHTML = '<div class="empty-msg">🧭 数据加载失败: ' + e(err.message) + '<br><br><button class="btn" onclick="scLoad()">重试</button></div>';
-  });
+    var message = err.name === 'AbortError' ? '请求超时（20秒）' : err.message;
+    root.innerHTML = '<div class="empty-msg">🧭 数据加载失败: ' + e(message) + '<br><br><button class="btn" onclick="scLoad()">重试</button></div>';
+  }).finally(function () { clearTimeout(timer); });
 }
-var scEnv = null;
 
 function scFiltered() {
   var rows = scData.slice();
@@ -2282,7 +2339,30 @@ function scClearOiRange() {
 function scSetPreset(t) { scTag = t; renderScreener(); }
 function scSortBy(k) { if (scSort === k) scAsc = !scAsc; else { scSort = k; scAsc = false; } renderScreener(); }
 
+function scAgeText(seconds) {
+  if (seconds == null || !isFinite(seconds)) return '未知';
+  if (seconds < 60) return Math.max(0, Math.round(seconds)) + '秒';
+  if (seconds < 3600) return Math.round(seconds / 60) + '分钟';
+  return (seconds / 3600).toFixed(1) + '小时';
+}
+
+function scFreshnessHtml() {
+  if (!scSources) return '<div class="fwd-hint fwd-hint-na">数据源时间未知，候选池冻结</div>';
+  var labels = { market: '市值', coinfilter: 'OI/行情', forward: '结构评分' };
+  var parts = [];
+  ['market', 'coinfilter', 'forward'].forEach(function (key) {
+    var source = scSources[key] || {};
+    var color = source.stale ? '#f87171' : '#34d399';
+    parts.push('<span style="color:' + color + '">' + labels[key] + ' ' + scAgeText(source.age_seconds) + '</span>');
+  });
+  var updated = scUpdated ? new Date(scUpdated).toLocaleString('zh-CN') : '未知';
+  var cls = scStale ? 'fwd-hint fwd-hint-bear' : 'fwd-hint fwd-hint-bull';
+  var state = scStale ? '数据源过期，候选池已冻结' : '数据源正常';
+  return '<div class="' + cls + '">' + state + ' · ' + parts.join(' · ') + ' · 有效快照 ' + e(updated) + '</div>';
+}
+
 function scEnvHtml() {
+  if (scStale) return '<div class="fwd-hint fwd-hint-bear">L0 环境闸门：冻结（关键数据源过期）</div>';
   if (!scEnv || scEnv.up == null) return '<div class="fwd-hint fwd-hint-na">L0 环境闸门：未知（候选池冻结，保守）</div>';
   if (scEnv.up) return '<div class="fwd-hint fwd-hint-bull">L0 环境闸门：🟢 放行（BTC ' + fP(scEnv.close) + ' &gt; SMA20 ' + fP(scEnv.sma20) + '）— 蓄水候选可启用（验证：涨市 +0.8%/胜率56%）</div>';
   return '<div class="fwd-hint fwd-hint-bear">L0 环境闸门：🔴 冻结（BTC ' + fP(scEnv.close) + ' &lt; SMA20 ' + fP(scEnv.sma20) + '）— 蓄水候选降级为 env_bear，禁止按候选池进场（验证：跌市 -5.3%/胜率31%）</div>';
@@ -2292,6 +2372,7 @@ function scSigTag(r) {
   var t = [];
   if (r.effective_signal === 'acc_candidate') t.push('<span class="tag tag-acc">🧭蓄水候选</span>');
   else if (r.effective_signal === 'acc_candidate_env_bear') t.push('<span class="tag tag-watch">🧭候选(环境冻结)</span>');
+  else if (r.effective_signal === 'acc_candidate_stale') t.push('<span class="tag tag-danger">候选(数据过期)</span>');
   else if (r.forward_signal === 'avoid_event' || r.event_day) t.push('<span class="tag tag-danger">⛔事件回避</span>');
   else if (r.forward_signal === 'watch') t.push('<span class="tag tag-watch">👁观察</span>');
   if (r.thin_book) t.push('<span class="tag tag-watch">⚠️薄盘口</span>');
@@ -2318,6 +2399,7 @@ function renderScreener() {
   var nThin = scData.filter(function (r) { return r.thin_book; }).length;
 
   var H = '<div class="fwd-wrap">';
+  H += scFreshnessHtml();
   H += scEnvHtml();
   H += '<div class="fwd-bar">';
   H += '<button class="btn' + (scTag === '' ? ' btn-active' : '') + '" onclick="scSetPreset(\\'\\')">🎯 全部 (' + rows.length + ')</button>';
@@ -2336,16 +2418,19 @@ function renderScreener() {
   H += '<span class="dim" id="sc-oi-status">' + (scOiMin != null || scOiMax != null ? '🔍 已过滤 OI ' + (scOiMin != null ? (scOiMin/1e6) : '0') + 'M ~ ' + (scOiMax != null ? (scOiMax/1e6) : '∞') + 'M' : '未过滤（全市场）') + '</span>';
   H += '</div>';
   H += '<div class="fwd-stats">🧭候选 ' + nAcc + ' · ⛔回避 ' + nAvoid + ' · 🔔告警 ' + nAlert + ' · ⚠️薄盘口 ' + nThin + (scAppearTotal > 0 ? ' · 📊 7天出现 ' + scAppearTotal + ' 次' : '') + '</div>';
-  H += '<div class="fwd-bar" style="margin-top:10px;flex-wrap:wrap;gap:6px;align-items:center">';
-  H += '<span class="dim" style="font-weight:700;color:var(--accent,#60a5fa)">🕘 历史出现</span>';
-  H += '<span class="dim">时间范围:</span>';
-  [1,4,6,12,24,48,72,96,120].forEach(function (h) {
-    H += '<button class="btn btn-sm' + (scAhHours === h ? ' btn-active' : '') + '" onclick="scAhSet(' + h + ')">' + (h < 24 ? h + 'h' : (h % 24 === 0 ? (h / 24) + 'd' : h + 'h')) + '</button>';
+  H += '<div style="margin-top:10px;padding:12px;border:1px solid var(--border);border-radius:10px;background:var(--surface);display:flex;flex-direction:column;gap:9px">';
+  H += '<div class="fwd-bar" style="margin:0;flex-wrap:wrap;gap:6px;align-items:center">';
+  H += '<span class="dim" style="font-weight:700;color:var(--accent,#60a5fa)">🕘 历史出现</span><span class="dim">快捷范围:</span>';
+  [[1,'1h'],[4,'4h'],[12,'12h'],[24,'1d'],[168,'7d'],[720,'30d']].forEach(function (item) {
+    H += '<button class="btn btn-sm' + (scAhMode === 'hours' && scAhHours === item[0] ? ' btn-active' : '') + '" onclick="scAhPreset(\\'hours\\',' + item[0] + ')">' + item[1] + '</button>';
   });
-  H += '<button class="btn btn-sm" onclick="scAhLoad()" style="background:linear-gradient(135deg,#3b82f6,#2563eb);color:#fff;font-weight:700">查询</button>';
-  H += '<span class="dim" id="sc-ah-status"></span>';
-  H += '</div>';
-  H += '<div id="sc-ah-panel"></div>';
+  H += '<button class="btn btn-sm' + (scAhMode === 'all' ? ' btn-active' : '') + '" onclick="scAhPreset(\\'all\\',0)">全部历史</button>';
+  H += '<span class="dim" id="sc-ah-status"></span></div>';
+  H += '<div class="fwd-bar" style="margin:0;flex-wrap:wrap;gap:6px;align-items:center"><span class="dim">自定义北京日期:</span>';
+  H += '<input id="sc-ah-start" type="date" min="2026-08-04" max="' + scBjToday() + '" value="' + e(scAhStart) + '" style="padding:5px 7px;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  H += '<span class="dim">至</span><input id="sc-ah-end" type="date" min="2026-08-04" max="' + scBjToday() + '" value="' + e(scAhEnd) + '" style="padding:5px 7px;background:var(--surface-alt);border:1px solid var(--border);border-radius:6px;color:var(--text)">';
+  H += '<button class="btn btn-sm' + (scAhMode === 'range' ? ' btn-active' : '') + '" onclick="scAhCustom()">查询日期范围</button>';
+  H += '<span class="dim">可用历史从 2026-08-04 开始</span></div><div id="sc-ah-panel"></div></div>';
 
   if (!rows.length) {
     H += '<div class="empty-msg">没有符合条件的币。</div>';
@@ -2396,7 +2481,7 @@ function renderScreener() {
 `;
 
 const KV_HTML_KEY='dashboard_html';
-function json(d,s=200){return new Response(JSON.stringify(d),{status:s,headers:{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*'}})}
+function json(d,s=200){return new Response(JSON.stringify(d),{status:s,headers:{'Content-Type':'application/json; charset=utf-8','Access-Control-Allow-Origin':'*','Cache-Control':'no-store'}})}
 function html(c,s=200){return new Response(c,{status:s,headers:{'Content-Type':'text/html; charset=utf-8','Access-Control-Allow-Origin':'*'}})}
 function normalizePath(p){for(const pre of['/screener','']){if(p===pre||p===pre+'/')return'/';if(p.startsWith(pre+'/'))return p.slice(pre.length)}return p}
 function matchMarketKey(ba,sym,map){const u=(ba||'').toUpperCase();if(map[u])return map[u];if(map[sym])return map[sym];const c=u.replace(/^\d{4,}x?/,'');if(c&&c!==u&&map[c])return map[c];return null}
@@ -2428,9 +2513,9 @@ function uL(cr){if(cr==null)return '\u26a0\ufe0f \u672a\u77e5';if(cr<0.3)return 
 addEventListener('fetch', event => {
   const url=new URL(event.request.url),path=normalizePath(url.pathname);
   if(event.request.method==='OPTIONS')return event.respondWith(new Response(null,{headers:{'Access-Control-Allow-Origin':'*','Access-Control-Allow-Methods':'GET,POST,OPTIONS','Access-Control-Allow-Headers':'Content-Type,X-Auth-Key'}}));
-  if(path==='/api/debug-exchange')return event.respondWith(hDD(MARKET_DATA));
+  if(path==='/api/debug-exchange')return event.respondWith(hDD(MARKET_DATA,event.request));
   if(path==='/api/data')return event.respondWith(hDA(MARKET_DATA));
-  if(path==='/api/refresh'&&event.request.method==='POST')return event.respondWith(hRF(MARKET_DATA));
+  if(path==='/api/refresh'&&event.request.method==='POST')return event.respondWith(hRF(MARKET_DATA,event.request));
   if(path==='/api/upload'&&event.request.method==='POST')return event.respondWith(hUP(event.request,MARKET_DATA));
   if(path==='/api/relay-tickers'&&event.request.method==='POST')return event.respondWith(hRL(event.request,MARKET_DATA));
   if(path==='/api/demon')return event.respondWith(hDM(MARKET_DATA));
@@ -2448,6 +2533,8 @@ addEventListener('fetch', event => {
   if(path==='/api/mentioned')return event.respondWith(hML(MARKET_DATA));
   if(path==='/api/screener')return event.respondWith(hSC(MARKET_DATA));
   if(path==='/api/coin-history')return event.respondWith(hCH(MARKET_DATA,event.request.url));
+  if(path==='/api/appear-history')return event.respondWith(hAH(MARKET_DATA,event.request.url));
+  if(path==='/api/timing')return event.respondWith(hTM(MARKET_DATA,event.request.url));
   if(path==='/api/status')return event.respondWith(hST(MARKET_DATA));
   event.respondWith(hDB(MARKET_DATA));
 });
@@ -2506,7 +2593,7 @@ async function healGainerArchive(kv){
 }
 async function hDA(kv){const r=await kv.get('data'),u=await kv.get('last_updated');if(!r)return json({ok:false,error:'no data',data:[],updated:null});const p=JSON.parse(r);return json({ok:true,updated:u,data:p,count:p.length})}
 async function hDB(kv){const h=await kv.get(KV_HTML_KEY);if(h)return html(h);if(globalThis.INLINE_HTML)return html(globalThis.INLINE_HTML);return new Response('No dashboard',{status:503})}
-async function hRF(kv){const mem=await kv.get('data');console.log('Refresh start, current:',mem?JSON.parse(mem).length:0);await refreshData(kv,{});const u=await kv.get('last_updated'),c=await kv.get('count');return json({ok:true,updated:u,coins:parseInt(c||'0')})}
+async function hRF(kv,req){const k=RELAY_AUTH_KEY,a=req&&req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);const mem=await kv.get('data');console.log('Refresh start, current:',mem?JSON.parse(mem).length:0);await refreshData(kv,{});const u=await kv.get('last_updated'),c=await kv.get('count');return json({ok:true,updated:u,coins:parseInt(c||'0')})}
 async function hUP(req,kv){const k=UPLOAD_AUTH_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!Array.isArray(b))return json({ok:false,error:'Must be array'},400);await kv.put('data',JSON.stringify(b));const n=new Date().toISOString();await kv.put('last_updated',n);await kv.put('count',String(b.length));return json({ok:true,coins:b.length,updated:n})}catch(e){return json({ok:false,error:e.message},400)}}
 async function hRL(req,kv){const k=RELAY_AUTH_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!b||typeof b!=='object')return json({ok:false,error:'Must be object'},400);const n=new Date().toISOString();await kv.put('exchange_proxy',JSON.stringify({...b,updated:n}));
   // ── 每日涨幅榜归档（gainer_hist_YYYYMMDD 北京日界，当日快照，覆盖写回）──
@@ -2537,9 +2624,9 @@ async function hRL(req,kv){const k=RELAY_AUTH_KEY,a=req.headers.get('X-Auth-Key'
   const s=[];if(b.binance)s.push('binance:'+b.binance.length);if(b.bybit)s.push('bybit:'+b.bybit.length);if(b.okx)s.push('okx:'+b.okx.length);return json({ok:true,sources:s.join(', '),updated:n})}catch(e){return json({ok:false,error:e.message},400)}}
 async function hRD(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!b||!Array.isArray(b.data))return json({ok:false,error:'Must be {data:[...]}'},400);const n=new Date().toISOString();await kv.put('demon_data',JSON.stringify({data:b.data,updated:n,count:b.data.length}));return json({ok:true,coins:b.data.length,updated:n})}catch(e){return json({ok:false,error:e.message},400)}}
 async function hDM(kv){const r=await kv.get('demon_data');if(!r)return json({ok:false,error:'no demon data',data:[],updated:null});const p=JSON.parse(r);const arr=Array.isArray(p)?p:p.data||[];return json({ok:true,updated:p.updated||null,data:arr,count:p.count||arr.length})}
-async function hRCF(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!b||!Array.isArray(b.data))return json({ok:false,error:'Must be {data:[...]}'},400);const n=b.updated||new Date().toISOString();await kv.put('coinfilter_data',JSON.stringify({data:b.data,updated:n,count:b.data.length}));if(Array.isArray(b.mentioned)&&b.mentioned.length>0){await kv.put('mentioned_list',JSON.stringify(b.mentioned)).catch(()=>{})}return json({ok:true,coins:b.data.length,updated:n})}catch(e){return json({ok:false,error:e.message},400)}}
-async function hCF(kv){const r=await kv.get('coinfilter_data');if(!r)return json({ok:false,error:'no coinfilter data',data:[],updated:null,count:0});const p=JSON.parse(r);const arr=Array.isArray(p)?p:p.data||[];return json({ok:true,updated:p.updated||null,count:p.count||arr.length,data:arr})}
-async function hRWF(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!b||!Array.isArray(b.data))return json({ok:false,error:'Must be {data:[...]}'},400);const n=b.updated||new Date().toISOString();const payload={data:b.data,updated:n,count:b.data.length,env:b.env||null};await kv.put('forward_data',JSON.stringify(payload));
+async function hRCF(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!b||!Array.isArray(b.data))return json({ok:false,error:'Must be {data:[...]}'},400);const rows=b.data;const usable=rows.filter(c=>c&&c.symbol&&c.base_asset&&Number.isFinite(c.price)&&Number.isFinite(c.oi_value)&&Number.isFinite(c.oi_contracts)).length;const minUsable=Math.max(100,Math.ceil(rows.length*0.8));if(rows.length<100||usable<minUsable)return json({ok:false,error:'Incomplete coinfilter snapshot rejected',quality:{row_count:rows.length,usable,min_usable:minUsable}},422);const n=b.updated||new Date().toISOString();const payload={data:rows,updated:n,count:rows.length,quality:{usable,coverage:Math.round(usable/rows.length*1000)/1000}};await kv.put('coinfilter_data',JSON.stringify(payload));if(Array.isArray(b.mentioned)&&b.mentioned.length>0){await kv.put('mentioned_list',JSON.stringify(b.mentioned)).catch(()=>{})}return json({ok:true,coins:rows.length,updated:n,quality:payload.quality})}catch(e){return json({ok:false,error:e.message},400)}}
+async function hCF(kv){const r=await kv.get('coinfilter_data');if(!r)return json({ok:false,error:'no coinfilter data',data:[],updated:null,count:0});const p=JSON.parse(r);const arr=Array.isArray(p)?p:p.data||[];return json({ok:true,updated:p.updated||null,count:p.count||arr.length,quality:p.quality||null,data:arr})}
+async function hRWF(req,kv){const k=DEMON_RELAY_KEY,a=req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);try{const b=await req.json();if(!b||!Array.isArray(b.data))return json({ok:false,error:'Must be {data:[...]}'},400);const rows=b.data;const structured=rows.filter(c=>c&&c.drawdown_60d!=null&&c.range_20d!=null&&c.vol_shrink_20d!=null).length;const envOk=!!(b.env&&typeof b.env.up==='boolean'&&Number.isFinite(b.env.close)&&Number.isFinite(b.env.sma20));const minStructured=Math.max(50,Math.ceil(rows.length*0.5));if(rows.length<100||structured<minStructured||!envOk)return json({ok:false,error:'Incomplete forward snapshot rejected',quality:{row_count:rows.length,structured,min_structured:minStructured,env_ok:envOk}},422);const n=b.updated||new Date().toISOString();const payload={data:rows,updated:n,count:rows.length,env:b.env,quality:{structured,coverage:Math.round(structured/rows.length*1000)/1000}};await kv.put('forward_data',JSON.stringify(payload));
   // ── 每日候选池归档（fwd_hist_YYYYMMDD 北京日界=UTC+8，当日并集，覆盖写回）──
   try{
     const bj = new Date(new Date(n).getTime() + 8*3600*1000); const day = bj.toISOString().slice(0,10);
@@ -2682,48 +2769,76 @@ const n=b.updated||new Date().toISOString();
 await kv.put(dayKey,JSON.stringify({date:b.date,gainers:b.gainers,updated:n,backfilled:true}));
 return json({ok:true,date:b.date,count:b.gainers.length})}catch(e){return json({ok:false,error:e.message},400)}}
 
-// 📊 历史出现：按小时窗口查曾经入选候选池的币（fwd_hist 归档 + appear_count）
-// 窗口: 1/4/6/12/24/48/72/96/120 小时；返回每币 首次入选/最后入选/入选天数/出现次数/最高分
-async function hAH(kv,url){
-  const u=new URL(url);
-  const hours=Math.min(parseInt(u.searchParams.get('hours')||'24',10)||24,120);
-  const now=new Date();
-  const cutoff=new Date(now.getTime()-hours*3600*1000);
-  // 读窗口内所有 fwd_hist 归档（北京日界，覆盖 hours 小时）
-  const daysArr=[];
-  for(let i=0;i<Math.ceil(hours/24)+1;i++){
-    const bj=new Date(now.getTime()+8*3600*1000-i*86400000);
-    daysArr.push(bj.toISOString().slice(0,10));
+// 历史出现：支持小时窗口、任意北京日期范围、以及全部已归档历史。
+const FWD_HISTORY_START='2026-08-04';
+const FWD_HISTORY_MAX_DAYS=1000;
+
+function historyDateRange(start,end){
+  const dates=[];
+  const first=Date.parse(start+'T00:00:00Z'),last=Date.parse(end+'T00:00:00Z');
+  for(let time=first;time<=last;time+=86400000)dates.push(new Date(time).toISOString().slice(0,10));
+  return dates;
+}
+
+function historyRequest(url){
+  const params=new URL(url).searchParams;
+  const today=new Date(Date.now()+8*3600000).toISOString().slice(0,10);
+  const all=params.get('all')==='1';
+  const start=params.get('start'),end=params.get('end');
+  if(all)return{mode:'all',start:FWD_HISTORY_START,end:today,hours:null,cutoff:null};
+  if(start||end){
+    if(!/^\d{4}-\d{2}-\d{2}$/.test(start||'')||!/^\d{4}-\d{2}-\d{2}$/.test(end||''))return{error:'start and end must be YYYY-MM-DD'};
+    if(start>end)return{error:'start must not be after end'};
+    const selectedStart=start<FWD_HISTORY_START?FWD_HISTORY_START:start,selectedEnd=end>today?today:end;
+    if(selectedStart>selectedEnd)return{error:'date range is outside available history starting 2026-08-04'};
+    return{mode:'range',start:selectedStart,end:selectedEnd,hours:null,cutoff:null};
   }
-  const frs=await Promise.all(daysArr.map(ds=>kv.get('fwd_hist_'+ds.replace(/-/g,''))));
-  const acR=await kv.get('appear_count');
-  let ac=null;if(acR){try{ac=JSON.parse(acR)}catch(e){}}
-  const appear={};if(ac&&ac.days){for(const d of Object.keys(ac.days)){for(const ba of Object.keys(ac.days[d])){appear[ba]=(appear[ba]||0)+ac.days[d][ba];}}}
-  const bySym={};
-  daysArr.forEach((ds,idx)=>{
-    const fr=frs[idx];if(!fr)return;
-    try{
-      const p=JSON.parse(fr);
-      for(const c of (p.candidates||[])){
-        const ba=c.base_asset;if(!ba)continue;
-        const fs=c.first_seen||ds,ls=c.last_seen||ds;
-        // 窗口过滤：首次入选或最后入选在窗口内
-        const fsT=Date.parse(fs),lsT=Date.parse(ls);
-        if(fsT<cutoff.getTime()&&lsT<cutoff.getTime())continue;
-        const ex=bySym[ba];
-        if(!ex){bySym[ba]={base_asset:ba,first_seen:fs,last_seen:ls,days:1,best_score:c.forward_score!=null?c.forward_score:null};}
-        else{
-          if(fs<ex.first_seen)ex.first_seen=fs;
-          if(ls>ex.last_seen)ex.last_seen=ls;
-          ex.days++;
-          if(c.forward_score!=null&&(ex.best_score==null||c.forward_score>ex.best_score))ex.best_score=c.forward_score;
-        }
-      }
-    }catch(e){}
+  // 上限 1000 天（与 FWD_HISTORY_MAX_DAYS 一致）：hours 无上限时
+  // hours=1e10 会构造出非法 Date，historyDateRange 抛 RangeError → HTTP 500
+  const hours=Math.min(Math.max(1,parseInt(params.get('hours')||'24',10)||24),FWD_HISTORY_MAX_DAYS*24);
+  const cutoff=new Date(Date.now()-hours*3600000);
+  const first=new Date(cutoff.getTime()+8*3600000).toISOString().slice(0,10);
+  return{mode:'hours',start:first<FWD_HISTORY_START?FWD_HISTORY_START:first,end:today,hours,cutoff};
+}
+
+function aggregateHistory(records,dates,cutoff,dayCounts,hourMode){
+  const byAsset={};
+  dates.forEach((date,index)=>{
+    const payload=records[index];
+    for(const candidate of payload?payload.candidates||[]:[]){
+      const asset=candidate.base_asset;if(!asset)continue;
+      const first=candidate.first_seen||date,last=candidate.last_seen||date;
+      if(cutoff&&Date.parse(last)<cutoff.getTime())continue;
+      const current=byAsset[asset]||{base_asset:asset,first_seen:first,last_seen:last,day_set:new Set(),best_score:null};
+      if(first<current.first_seen)current.first_seen=first;
+      if(last>current.last_seen)current.last_seen=last;
+      current.day_set.add(date);
+      if(candidate.forward_score!=null&&(current.best_score==null||candidate.forward_score>current.best_score))current.best_score=candidate.forward_score;
+      byAsset[asset]=current;
+    }
   });
-  const out=Object.values(bySym).map(x=>({...x,appear_count:appear[x.base_asset]||0}));
-  out.sort((a,b)=>(b.last_seen||'').localeCompare(a.last_seen||''));
-  return json({ok:true,hours,cutoff:cutoff.toISOString(),count:out.length,data:out});
+  return Object.values(byAsset).map(row=>{
+    const complete=!hourMode&&Array.from(row.day_set).every(date=>Object.prototype.hasOwnProperty.call(dayCounts,date));
+    let count=0;if(complete)for(const date of row.day_set)count+=(dayCounts[date]&&dayCounts[date][row.base_asset])||0;
+    return{base_asset:row.base_asset,first_seen:row.first_seen,last_seen:row.last_seen,days:row.day_set.size,best_score:row.best_score,appear_count:complete?count:null};
+  });
+}
+
+async function hAH(kv,url){
+  const query=historyRequest(url);
+  if(query.error)return json({ok:false,error:query.error},400);
+  const dates=historyDateRange(query.start,query.end);
+  if(dates.length>FWD_HISTORY_MAX_DAYS)return json({ok:false,error:'date range exceeds 1000 days'},400);
+  const [rawArchives,rawAppear]=await Promise.all([Promise.all(dates.map(date=>kv.get('fwd_hist_'+date.replace(/-/g,'')))),kv.get('appear_count')]);
+  const records=rawArchives.map(raw=>{try{return JSON.parse(raw||'null')}catch(e){return null}});
+  let counts=null;try{counts=JSON.parse(rawAppear||'null')}catch(e){}
+  const dayCounts=counts&&counts.days?counts.days:{};
+  const data=aggregateHistory(records,dates,query.cutoff,dayCounts,query.mode==='hours');
+  data.sort((a,b)=>(b.last_seen||'').localeCompare(a.last_seen||''));
+  const archivedDates=dates.filter((date,index)=>!!records[index]);
+  const countDays=dates.filter(date=>Object.prototype.hasOwnProperty.call(dayCounts,date));
+  const complete=query.mode!=='hours'&&countDays.length===archivedDates.length;
+  return json({ok:true,mode:query.mode,hours:query.hours,start:query.start,end:query.end,available_start:FWD_HISTORY_START,available_end:dates[dates.length-1],selected_days:dates.length,archive_days:archivedDates.length,appear_count_complete:complete,count:data.length,data});
 }
 // 🛤️ 单币历史轨迹：指定币在窗口内每天的候选池状态 + 涨幅榜状态 + 价格快照
 // 参数: symbol=BTC 或 BTCUSDT（大小写不敏感）; days=30（默认，上限 90）
@@ -2795,7 +2910,176 @@ async function hCH(kv,url){
     timeline});
 }
 
-// 📊 候选池表现分析：每日候选 → fwd1/3/5 收益 vs 市场基准
+// ═══════════════════════════════════════════════════════════════════════
+// ⚡ 择时层 — 共享实现（hTM 与 hSC 共用，避免两处逻辑漂移）
+//
+// 数据依据（全部实测）:
+//   追强禁令（全市场 689 币 × 500 天 = 224,236 样本，涨跌市皆负）:
+//     5日涨>15%   中位 -2.91%  胜率 40%
+//     5日涨>30%   中位 -5.75%  p10 -26.35%
+//     1日涨>10%   中位 -3.95%  胜率 36%
+//     1日涨>20%   中位 -7.06%  p10 -32.84%
+//   深底甜区（候选池 163 样本，稳健但样本小）:
+//     5日跌5~15% 且 距60日高>=50%  -> fwd3 +2.77%
+//     非深底同类样本（55,285）      -> fwd3 -0.14%
+//   注: 量能>2x 在全市场无负超额（均值 +0.18%），故【不作为禁令】，仅展示。
+//
+// 依赖: gainer_hist_*（全市场每日收盘价快照）+ forward_data（drawdown_60d）
+// 零额外抓取，不依赖 Worker 访问 Binance。
+// ═══════════════════════════════════════════════════════════════════════
+const TIMING_LOOKBACK=10;      // 计算 ret5 需 6 个价格点，取 10 天留冗余
+const TIMING_DEEP=0.50;        // 深底阈值（敏感性拐点）
+
+async function computeTiming(kv, opts){
+  const o=opts||{};
+  const lookback=Math.min(Math.max(parseInt(o.lookback||TIMING_LOOKBACK,10)||TIMING_LOOKBACK,6),30);
+  const now=new Date();
+  const daysArr=[];
+  for(let i=0;i<lookback;i++){
+    const bj=new Date(now.getTime()+8*3600*1000-i*86400000);
+    daysArr.push(bj.toISOString().slice(0,10));
+  }
+  // 并行读: 每日 gainer_hist（价格+量） + forward_data（结构因子）
+  const keys=[];
+  for(const ds of daysArr) keys.push('gainer_hist_'+ds.replace(/-/g,''));
+  const raw=await Promise.all([...keys.map(k=>kv.get(k).catch(()=>null)),kv.get('forward_data').catch(()=>null)]);
+  const pxByDay={},volByDay={};
+  daysArr.forEach((ds,idx)=>{
+    const g=raw[idx];
+    if(!g) return;
+    try{
+      const p=JSON.parse(g),m={},v={};
+      for(const x of (p.gainers||[])){
+        if(x.last_price!=null)m[x.base_asset]=x.last_price;
+        if(x.volume_24h_usdt!=null)v[x.base_asset]=x.volume_24h_usdt;
+      }
+      pxByDay[ds]=m;volByDay[ds]=v;
+    }catch(e){}
+  });
+  // forward_data: base_asset -> 结构因子 + 候选标记
+  const fwdMeta={},liveCands=[];
+  const fraw=raw[daysArr.length];
+  if(fraw){
+    try{
+      const p=JSON.parse(fraw);
+      for(const x of (Array.isArray(p)?p:(p.data||[]))){
+        if(!x||!x.base_asset) continue;
+        fwdMeta[x.base_asset]=x;
+        if(x.signal==='acc_candidate'||x.effective_signal==='acc_candidate'
+           ||x.effective_signal==='acc_candidate_env_bear'){
+          liveCands.push({base_asset:x.base_asset,symbol:x.symbol,
+                          forward_score:x.forward_score,first_seen:x.first_seen||null});
+        }
+      }
+    }catch(e){}
+  }
+  // 候选来源: 优先 forward_data（实时），其次归档（fwd_hist 今日）
+  let cands=liveCands;
+  let candSource='forward_data';
+  if(cands.length===0){
+    candSource='fwd_hist(archived)';
+    const fh=await kv.get('fwd_hist_'+daysArr[0].replace(/-/g,'')).catch(()=>null);
+    if(fh){
+      try{ const p=JSON.parse(fh); cands=(p.candidates||[]); }catch(e){}
+    }
+  }
+  const deepTh=o.deep!=null?o.deep:TIMING_DEEP;
+  const byAsset={};
+  for(const c of cands){
+    const ba=c.base_asset;
+    if(!ba) continue;
+    // 价格序列（按日期新->旧）
+    const series=[];
+    for(const ds of daysArr){
+      const m=pxByDay[ds];
+      if(m&&m[ba]!=null) series.push({d:ds,p:m[ba],v:(volByDay[ds]||{})[ba]});
+    }
+    let ret1=null,ret5=null,volRatio=null;
+    if(series.length>=2&&series[1].p>0) ret1=series[0].p/series[1].p-1;
+    if(series.length>=6&&series[5].p>0) ret5=series[0].p/series[5].p-1;
+    const vols=series.map(s=>s.v).filter(x=>x!=null&&x>0);
+    if(vols.length>=4){
+      const avg=vols.slice(1).reduce((x,y)=>x+y,0)/(vols.length-1);
+      if(avg>0) volRatio=vols[0]/avg;
+    }
+    // 追强禁令（全市场验证，无条件生效）
+    const ban=[];
+    if(ret5!=null&&ret5>0.30) ban.push('5日涨>30%');
+    if(ret1!=null&&ret1>0.20) ban.push('1日涨>20%');
+    if(ret5!=null&&ret5>0.15) ban.push('5日涨>15%');
+    if(ret1!=null&&ret1>0.10) ban.push('1日涨>10%');
+    // 深底判据
+    const meta=fwdMeta[ba]||null;
+    const dd60=(meta&&meta.drawdown_60d!=null)?meta.drawdown_60d:null;
+    const deep=dd60!=null&&dd60>=deepTh;
+    // 分档
+    let zone='其他',scoreAdj=0;
+    if(ret5==null){zone='数据不足';}
+    else if(ret5<-0.15){zone=deep?'★深底甜区(跌>15%)':'跌太深(非深底)';scoreAdj=deep?1:0;}
+    else if(ret5<-0.10){zone=deep?'★深底甜区(-15~-10%)':'回落(-15~-10%)';scoreAdj=deep?2:0;}
+    else if(ret5<-0.05){zone=deep?'★深底甜区(-10~-5%)':'回落(-10~-5%)';scoreAdj=deep?2:0;}
+    else if(ret5<0){zone=deep?'偏静+深底(-5~0%)':'偏静(-5~0%)';scoreAdj=deep?1:0;}
+    else if(ret5<0.05){zone='缓涨(0~+5%)';}
+    else if(ret5<0.10){zone='偏热(+5~10%)';scoreAdj=-1;}
+    else if(ret5<0.15){zone='过热(+10~15%)';scoreAdj=-2;}
+    else {zone='✗追强禁令(>+15%)';scoreAdj=-3;}
+    // 深底甜区 + 放量 -> 降级（放量破坏"静"的前提）
+    if(volRatio!=null&&volRatio>2&&zone.indexOf('★')>=0){
+      zone='⚠️深底甜区但已放量';scoreAdj=Math.min(scoreAdj,0);
+    }
+    byAsset[ba]={
+      base_asset:ba,
+      symbol:c.symbol||(ba+'USDT'),
+      forward_score:c.forward_score,
+      first_seen:c.first_seen||null,
+      ret1:ret1,ret5:ret5,vol_ratio:volRatio,
+      dd60:dd60,deep:deep,
+      zone:zone,timing_adj:scoreAdj,ban:ban,
+      px:series.length?series[0].p:null,
+      pts:series.length
+    };
+  }
+  return {date:daysArr[0],tz:'UTC+8',lookback:lookback,
+          candSource:candSource,candCount:cands.length,
+          deepThreshold:deepTh,byAsset:byAsset};
+}
+
+// 排序权重（深底甜区优先，追强禁令最后）
+const TIMING_RANK={
+  '★深底甜区(-10~-5%)':0,'★深底甜区(-15~-10%)':0,'★深底甜区(跌>15%)':1,
+  '偏静+深底(-5~0%)':2,
+  '回落(-10~-5%)':3,'回落(-15~-10%)':3,
+  '缓涨(0~+5%)':4,'偏静(-5~0%)':4,
+  '跌太深(非深底)':5,'其他':6,'数据不足':7,
+  '⚠️深底甜区但已放量':8,
+  '偏热(+5~10%)':9,'过热(+10~15%)':10,'✗追强禁令(>+15%)':11
+};
+const TIMING_RANK_MISS=12;
+
+function sortTimingRows(rows){
+  return rows.sort((a,b)=>{
+    const ra=TIMING_RANK[a.zone]!=null?TIMING_RANK[a.zone]:TIMING_RANK_MISS;
+    const rb=TIMING_RANK[b.zone]!=null?TIMING_RANK[b.zone]:TIMING_RANK_MISS;
+    if(ra!==rb) return ra-rb;
+    return (b.forward_score||0)-(a.forward_score||0);
+  });
+}
+
+// GET /api/timing — 择时层独立视图
+async function hTM(kv,url){
+  const u=new URL(url);
+  const t=await computeTiming(kv,{lookback:u.searchParams.get('days')||TIMING_LOOKBACK});
+  const out=sortTimingRows(Object.values(t.byAsset));
+  const deepSweet=out.filter(x=>x.zone.indexOf('★深底')>=0);
+  const banned=out.filter(x=>x.ban.length>0);
+  return json({ok:true,date:t.date,tz:t.tz,lookback:t.lookback,
+    count:out.length,cand_source:t.candSource,
+    deep_sweet_count:deepSweet.length,sweet_count:out.filter(x=>x.zone.indexOf('★')>=0).length,
+    ban_count:banned.length,deep_threshold:t.deepThreshold,
+    env_note:'★深底甜区 = 5日跌5~15% 且 距60日高>='+(t.deepThreshold*100)+'%（候选池 163 样本 fwd3 +2.77%；非深底同类 55,285 样本 -0.14%）',
+    ban_note:'追强禁令（全市场 224,236 样本，涨跌市皆负）：5日涨>15%/30% · 1日涨>10%/20%',
+    data:out});
+}
 
 // 📊 候选池表现分析：每日候选 → fwd1/3/5 收益 vs 市场基准
 async function hPA(kv,url){const u=new URL(url);const days=Math.min(parseInt(u.searchParams.get('days')||'14',10)||14,60);const now=new Date();const daysArr=[];for(let i=0;i<days;i++){const bj=new Date(now.getTime()+8*3600*1000-i*86400000);daysArr.push(bj.toISOString().slice(0,10));}
@@ -2836,15 +3120,23 @@ async function hML(kv){const r=await kv.get('mentioned_list');if(!r)return json(
 // 数据源: forward(吸筹结构/评分) + coinfilter(OI/资费/盘口/信号) + data(市值)
 // 规则: 硬门槛五要素(下行保护验证 dn10 3.3%) + 强度分(叙事因子+1) + 事件回避(-3, fwd5 -1.7% 强验证)
 async function hSC(kv){
-  const [dr,cr,fr,ar]=await Promise.all([kv.get('data'),kv.get('coinfilter_data'),kv.get('forward_data'),kv.get('appear_count')]);
-  // 出现次数统计：appear_count KV（滚动 7 天，按天计数）
+  const [dr,cr,fr,ar,marketUpdated]=await Promise.all([kv.get('data'),kv.get('coinfilter_data'),kv.get('forward_data'),kv.get('appear_count'),kv.get('last_updated')]);
+  const now=Date.now();
+  const parseAge=(value)=>{const time=Date.parse(value||'');return Number.isFinite(time)?Math.max(0,Math.round((now-time)/1000)):null};
+  const sourceMeta=(updated,maxAge)=>{const age=parseAge(updated);return{updated:updated||null,age_seconds:age,stale:age==null||age>maxAge}};
+  let cfPayload={},fwPayload={};
+  try{cfPayload=JSON.parse(cr||'{}')}catch(e){}
+  try{fwPayload=JSON.parse(fr||'{}')}catch(e){}
+  const cfUpdated=cfPayload.updated||null,forwardUpdated=fwPayload.updated||null;
+  const sources={market:sourceMeta(marketUpdated,2*3600),coinfilter:sourceMeta(cfUpdated,45*60),forward:sourceMeta(forwardUpdated,45*60)};
+  const stale=Object.values(sources).some(source=>source.stale);
   const appear={};let appearTotal=0;
   if(ar){try{const p=JSON.parse(ar);if(p.days){for(const d of Object.keys(p.days)){for(const ba of Object.keys(p.days[d])){appear[ba]=(appear[ba]||0)+p.days[d][ba];appearTotal+=p.days[d][ba];}}}}catch(e){}}
   const base={};if(dr){try{const p=JSON.parse(dr);(Array.isArray(p)?p:p.data||[]).forEach(c=>{if(c.base_asset)base[c.base_asset]={market_cap:c.market_cap,volume_24h_usdt:c.volume_24h_usdt,cmc_rank:c.cmc_rank,circulating_ratio:c.circulating_ratio,unlock_risk:c.unlock_risk}})}catch(e){}}
-  const cf={};if(cr){try{const p=JSON.parse(cr);(Array.isArray(p)?p:p.data||[]).forEach(c=>{if(c.base_asset)cf[c.base_asset]=c})}catch(e){}}
-  const fw={};if(fr){try{const p=JSON.parse(fr);(Array.isArray(p)?p:p.data||[]).forEach(c=>{if(c.base_asset)fw[c.base_asset]=c})}catch(e){}}
-  let env=null;try{const p=JSON.parse(fr||'{}');env=p.env||null}catch(e){}
-  const envUp = env ? env.up : null;
+  const cf={};(Array.isArray(cfPayload)?cfPayload:cfPayload.data||[]).forEach(c=>{if(c.base_asset)cf[c.base_asset]=c});
+  const fw={};(Array.isArray(fwPayload)?fwPayload:fwPayload.data||[]).forEach(c=>{if(c.base_asset)fw[c.base_asset]=c});
+  const env=fwPayload.env||null;
+  const envUp=env?env.up:null;
   const rows=[];
   const allSyms=new Set([...Object.keys(cf),...Object.keys(fw)]);
   for(const sym of allSyms){
@@ -2857,39 +3149,63 @@ async function hSC(kv){
     const vol=c.volume_24h_usdt!=null?c.volume_24h_usdt:(b.volume_24h_usdt!=null?b.volume_24h_usdt:null);
     const score=f.forward_score!=null?f.forward_score:0;
     const sig=f.signal||'noise';
-    // L0 环境闸门：环境向下时 acc_candidate 降级
+    // BTC 闸门已移除（全市场 200,065 样本验证：吸筹门槛+深底 在涨市 +0.46pp / 跌市 +0.52pp，两制皆正）
+    // 原逻辑「跌市降级 acc_candidate_env_bear」不再生效；env 仍返回供前端参考展示。
     let effSig=sig;
-    if(sig==='acc_candidate'&&envUp===false)effSig='acc_candidate_env_bear';
-    // L2 排除层
+    if(sig==='acc_candidate'&&stale)effSig='acc_candidate_stale';
     const thinBook=c.orderbook_depth_usdt!=null&&c.orderbook_depth_usdt<200000;
     const distribution=oi!=null&&volOi!=null&&chg!=null&&oi>80e6&&volOi<3&&chg<-10;
     const killLongs=oi!=null&&chg!=null&&chg<-5;
     const eventDay=volOi!=null&&volOi>=5;
     const negFundPump=fund!=null&&fund<-0.05&&chg!=null&&chg>0;
-    // L4 告警（基于当前快照可算的）
     const alerts=[];
     if(f.spring_test)alerts.push('ST/Spring');
     if(f.breakout_consolidation)alerts.push('大阳线后盘整');
     if(c.oi_24h_change_pct!=null&&c.oi_24h_change_pct>2&&volOi!=null&&volOi>=5)alerts.push('放量+OI跟上');
     if(fund!=null&&fund<-0.05)alerts.push('深负资费');
-    rows.push({
-      symbol:sym,base_asset:sym.replace('USDT',''),
-      price,change_24h_pct:chg,volume_24h_usdt:vol,
-      market_cap:b.market_cap!=null?b.market_cap:null,
-      oi_value:oi,volume_oi_ratio:volOi,funding_rate_pct:fund,
-      orderbook_depth_usdt:c.orderbook_depth_usdt!=null?c.orderbook_depth_usdt:null,
-      oi_stage_label:c.oi_stage_label||null,tags:c.tags||[],
-      forward_score:score,forward_signal:sig,effective_signal:effSig,
-      drawdown_60d:f.drawdown_60d,range_20d:f.range_20d,vol_shrink_20d:f.vol_shrink_20d,
-      near_low_20d:f.near_low_20d,big_move_5d:f.big_move_5d,
-      spring_test:!!f.spring_test,breakout_consolidation:!!f.breakout_consolidation,
-      oi_24h_change_pct:c.oi_24h_change_pct!=null?c.oi_24h_change_pct:null,
-      thin_book:thinBook,distribution,kill_longs:killLongs,event_day:eventDay,neg_fund_pump:negFundPump,
-      appear_count:appear[sym]||0,
-      alerts
-    });
+    rows.push({symbol:c.symbol||f.symbol||sym+'USDT',base_asset:sym,price,change_24h_pct:chg,volume_24h_usdt:vol,market_cap:b.market_cap!=null?b.market_cap:null,oi_value:oi,volume_oi_ratio:volOi,funding_rate_pct:fund,orderbook_depth_usdt:c.orderbook_depth_usdt!=null?c.orderbook_depth_usdt:null,oi_stage_label:c.oi_stage_label||null,tags:c.tags||[],forward_score:score,forward_signal:sig,effective_signal:effSig,drawdown_60d:f.drawdown_60d,range_20d:f.range_20d,vol_shrink_20d:f.vol_shrink_20d,near_low_20d:f.near_low_20d,big_move_5d:f.big_move_5d,spring_test:!!f.spring_test,breakout_consolidation:!!f.breakout_consolidation,oi_24h_change_pct:c.oi_24h_change_pct!=null?c.oi_24h_change_pct:null,thin_book:thinBook,distribution,kill_longs:killLongs,event_day:eventDay,neg_fund_pump:negFundPump,appear_count:appear[sym]||0,alerts});
   }
-  return json({ok:true,updated:new Date().toISOString(),count:rows.length,env:env,appear_total:appearTotal,data:rows});
+  // ⚡ L1→L2 自动串联：把择时标签合并进候选行（与 /api/timing 同一实现，不会漂移）
+  let timingMeta=null;
+  try{
+    const t=await computeTiming(kv,{lookback:TIMING_LOOKBACK});
+    const byAsset=t.byAsset||{};
+    let tagged=0,banned=0;
+    for(const r of rows){
+      const x=byAsset[r.base_asset];
+      if(!x) continue;
+      r.timing_zone=x.zone;
+      r.timing_adj=x.timing_adj;
+      r.timing_ban=x.ban;
+      r.ret1=x.ret1;
+      r.ret5=x.ret5;
+      r.vol_ratio=x.vol_ratio;
+      r.timing_deep=x.deep;
+      r.timing_pts=x.pts;
+      // 仅在候选行上叠加调整分（避免影响非候选）
+      if(r.forward_score!=null&&r.forward_score>0){
+        r.forward_score_base=r.forward_score;
+        r.forward_score=Math.max(0,r.forward_score+x.timing_adj);
+      }
+      tagged++;
+      if(x.ban.length>0) banned++;
+    }
+    timingMeta={ok:true,date:t.date,cand_source:t.candSource,tagged,
+                banned,deep_threshold:t.deepThreshold};
+  }catch(e){
+    // 择时失败不阻断主接口（降级：candidates 照常返回，只是没有 timing_* 字段）
+    timingMeta={ok:false,error:String(e&&e.message||e)};
+  }
+  return json({ok:true,updated:forwardUpdated,count:rows.length,env,sources,stale,
+               appear_total:appearTotal,timing:timingMeta,data:rows});
 }
-async function hST(kv){const r=await kv.get('data'),u=await kv.get('last_updated'),c=await kv.get('count'),dr=await kv.get('demon_data'),cr=await kv.get('coinfilter_data'),fw=await kv.get('forward_data');let dc=0,du=null,cc=0,cu=null;if(dr){try{const dp=JSON.parse(dr);dc=dp.count||(Array.isArray(dp)?dp.length:0);du=dp.updated||null}catch(e){}}if(cr){try{const cp=JSON.parse(cr);cc=cp.count||(Array.isArray(cp)?cp.length:0);cu=cp.updated||null}catch(e){}}const ml=await kv.get('mentioned_list');let mentioned=[];if(ml){try{mentioned=JSON.parse(ml)}catch(e){}}return json({project:'筹码筛选',ok:!!r,coins:parseInt(c||'0'),updated:u,demon:{ok:!!dr,coins:parseInt(dc||'0'),updated:du},coinfilter:{ok:!!cr,coins:parseInt(cc||'0'),updated:cu},forward:{ok:!!fw,coins:fw?(()=>{try{return JSON.parse(fw).count||0}catch(e){return 0}})():0,updated:fw?(()=>{try{return JSON.parse(fw).updated||null}catch(e){return null}})():null},mentioned:mentioned})}
-async function hDD(kv){const eps=[{n:'BN',u:'https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT'},{n:'BN spot',u:'https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT'},{n:'BB',u:'https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT'},{n:'OKX',u:'https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT-SWAP'}];const r={};for(const ep of eps){const c=new AbortController,t=setTimeout(()=>c.abort(),1e4);try{const res=await fetch(ep.u,{signal:c.signal});clearTimeout(t);const txt=await res.text().catch(()=>'');r[ep.n]={s:res.status,p:txt.slice(0,100)}}catch(e){clearTimeout(t);r[ep.n]={e:e.message}}}await kv.put('debug_exchange',JSON.stringify(r)).catch(()=>{});return json(r)}
+async function hST(kv){
+  const [r,u,c,dr,cr,fw]=await Promise.all([kv.get('data'),kv.get('last_updated'),kv.get('count'),kv.get('demon_data'),kv.get('coinfilter_data'),kv.get('forward_data')]);
+  const parse=(raw)=>{try{return JSON.parse(raw||'{}')}catch(e){return{}}};
+  const age=(updated)=>{const time=Date.parse(updated||'');return Number.isFinite(time)?Math.max(0,Math.round((Date.now()-time)/1000)):null};
+  const meta=(raw,maxAge)=>{const payload=parse(raw),updated=payload.updated||null,seconds=age(updated);return{ok:!!raw,coins:payload.count||(Array.isArray(payload)?payload.length:0),updated,age_seconds:seconds,stale:seconds==null||seconds>maxAge}};
+  const marketAge=age(u);
+  const sources={market:{ok:!!r,coins:parseInt(c||'0'),updated:u,age_seconds:marketAge,stale:marketAge==null||marketAge>2*3600},demon:meta(dr,3*3600),coinfilter:meta(cr,45*60),forward:meta(fw,45*60)};
+  return json({project:'筹码筛选',ok:!!r,coins:parseInt(c||'0'),updated:u,demon:sources.demon,coinfilter:sources.coinfilter,forward:sources.forward,sources,stale:Object.values(sources).some(source=>source.stale)});
+}
+async function hDD(kv,req){const k=RELAY_AUTH_KEY,a=req&&req.headers.get('X-Auth-Key');if(!k||a!==k)return json({ok:false,error:'Unauthorized'},401);const eps=[{n:'BN',u:'https://fapi.binance.com/fapi/v1/ticker/24hr?symbol=BTCUSDT'},{n:'BN spot',u:'https://api.binance.com/api/v3/ticker/24hr?symbol=BTCUSDT'},{n:'BB',u:'https://api.bybit.com/v5/market/tickers?category=linear&symbol=BTCUSDT'},{n:'OKX',u:'https://www.okx.com/api/v5/market/ticker?instId=BTC-USDT-SWAP'}];const r={};for(const ep of eps){const c=new AbortController,t=setTimeout(()=>c.abort(),1e4);try{const res=await fetch(ep.u,{signal:c.signal});clearTimeout(t);const txt=await res.text().catch(()=>'');r[ep.n]={s:res.status,p:txt.slice(0,100)}}catch(e){clearTimeout(t);r[ep.n]={e:e.message}}}await kv.put('debug_exchange',JSON.stringify(r)).catch(()=>{});return json(r)}
