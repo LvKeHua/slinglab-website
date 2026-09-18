@@ -1,9 +1,9 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-09-18 11:00:32 UTC
+**Run at**: 2026-09-18 14:54:01 UTC
 **Coins tracked**: 517
-**With circulating ratio**: 314 (60.7%)
-**Average ratio**: 68.2%
+**With circulating ratio**: 316 (61.1%)
+**Average ratio**: 67.9%
 **Data conflicts**: 14 (2.7%)
 **Stale CG data**: 2 (0.4%)
 
@@ -15,7 +15,7 @@
 | IMX | 100.0% | 43.97% | 56.03% |
 | FLOKI | 95.24% | 48.22% | 47.02% |
 | BGB | 75.87% | 35.0% | 40.87% |
-| LSK | 95.98% | 58.27% | 37.71% |
+| LSK | 95.99% | 58.27% | 37.72% |
 | NEXO | 64.61% | 100.0% | 35.39% |
 | BNB | 100.0% | 66.58% | 33.42% |
 | G | 92.36% | 60.27% | 32.09% |
