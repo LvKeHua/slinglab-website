@@ -594,3 +594,33 @@ curl -X POST https://app.slinglab.xyz/screener/api/refresh
 
 *本文档由 Sisyphus AI 于 2026-07-22 自动生成。*
 *API 密钥已通过安全审计确认无泄露。*
+
+## 2026-09-23 11:42 — 安全: 清除 HEAD 残余明文 + 移除硬编码回退 (commit 0c600e5)
+
+背景: 上一轮 (824afd6) 清掉 CMC/UPLOAD/CF token 后复查, HEAD 仍残留 6 类明文, 本轮全部清除并做源码级去回退。
+
+| 项 | 位置 | 处理 |
+|---|---|---|
+| JP VPS root 密码 | 完整日志 1184 | 占位 REDACTED_JP_VPS_ROOT_PW |
+| JP_PROXY_KEY ×5 | 完整日志 981/991/1128/1338 | 占位 REDACTED_JP_PROXY_KEY |
+| mt-proxy 密钥 ×2 | 完整日志 1185/1338 | 占位 REDACTED_MT_PROXY_KEY |
+| site_auth 密文 | 完整日志 1181 | 占位 REDACTED_STONE_SITE_PW_CIPHER |
+| Stone 上传 key | HANDOFF ×4/×4, 项目完整日志 | 占位 + 源码移除明文兜底 |
+| collector 默认密钥 | 完整日志 1186 | 占位 REDACTED_STONE_COLLECTOR_KEY |
+
+源码级改动(消除而非遮蔽):
+- `exchange-keys.ts`(×2 树): LEGACY_KEY 置空 → 解密只认 STONE_ENC_KEY, 不再回退已泄露旧密钥
+- `deploy-upload.cjs`(×2 树): 无 DEPLOY_KEY 直接报错退出
+- `Stone/worker.js` 部署快照存档 + `worker/tmp/dr` 构建产物(含 .map): 同步占位符
+
+线上影响: 无。线上 Worker 早已迁移 `env.DEPLOY_KEY`; 实测 `/api/upload` 对未知路径返回 404。
+验证: HEAD 全库复查 6 类明文 0 命中; 本地工作区同步源码。
+
+待完成(需在控制台操作, 代码改不了已泄露的值):
+1. JP VPS: 改 root 密码(同步 16+ 脚本) + JP_PROXY_KEY 换新(stone/stone-autosync 服务 Environment=)
+2. mt-proxy worker: 换密钥
+3. Stone: DEPLOY_KEY / STONE_ENC_KEY 换新, 并重新加密 KV 中的交易所凭据
+4. Telegram: 两个自建 api_hash 已在公开历史 → my.telegram.org 重置; 纯 API_ID 无需换
+5. 5 个 CF token (cfut_×3 + cfoat_ + d7ca80 OAuth) 轮换
+
+另: Telegram 告警 bot token 未进入任何提交(仅本地 gitignore 手册 + 本地 stash), 经 GitHub API 复核不可达, 无需轮换。

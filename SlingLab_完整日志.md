@@ -978,7 +978,7 @@ HL assets: USDC 116.44 ✅
 **用户报告**：`1 个账户同步失败: Bybit: proxy HTTP 401`，Bybit 账户未同步。
 
 **排查过程**（4 轮诊断）：
-1. **第一轮**：检查 stone/stone-autosync 服务环境变量 → 发现 `JP_PROXY_KEY` 未配置（安全加固时把默认值改为空字符串，但 systemd 没配环境变量）→ 给两个服务补 `Environment=JP_PROXY_KEY=REDACTED_JP_PROXY_KEY` 并重启
+1. **第一轮**：检查 stone/stone-autosync 服务环境变量 → 发现 `JP_PROXY_KEY` 未配置（安全加固时把默认值改为空字符串，但 systemd 没配环境变量）→ 给两个服务补 `Environment=JP_PROXY_KEY=stone-jp-proxy-2026` 并重启
 2. **第二轮**：仍 401 → 直接带 key 测试代理 → 代理返回 `{"status":401,"body":""}`（代理鉴权已通过，401 来自上游 Bybit）→ 检查签名逻辑（正确）→ 美国 VPS 直连 Bybit 被 403 地理封锁（代理必须）
 3. **第三轮**：解密数据库 key 测试 → 发现 Bybit 账户 key 是 `testkey`（7 位测试密钥）→ 数据库有 38 个账户，其中 32 个是测试垃圾（Binance 16 个 `fake-key`/单字符、Bybit 1 个 `testkey`、HL 15 个空地址 `0x0000000000`）
 4. **第四轮**：删除 32 个测试账户 → 剩 6 个 → autosync 仍 1 错误（HL `活跃钱包` 地址 43 位非法）→ 删除非法 + 重复地址 → 最终 4 个真实账户
@@ -988,7 +988,7 @@ HL assets: USDC 116.44 ✅
 - **验证脚本缺环境变量**：手动验证脚本进程没带 `JP_PROXY_KEY`（`JP_PROXY_KEY = ''` → 代理 401），非服务问题
 
 **修复内容**：
-1. stone/stone-autosync 服务补 `JP_PROXY_KEY=REDACTED_JP_PROXY_KEY` 环境变量
+1. stone/stone-autosync 服务补 `JP_PROXY_KEY=stone-jp-proxy-2026` 环境变量
 2. 删除 32 个测试账户（Binance 16 + HL 15 + Bybit 1）
 3. 删除 HL 非法地址（43 位）与重复地址账户
 
@@ -1125,7 +1125,7 @@ entry: 233.1037 | exit: 234 (快照 mark) | size: 0.82 | pnl: +$0.73
 
 **④ 测试脚本环境变量陷阱（记录）**
 - 手动测试脚本进程不带 `JP_PROXY_KEY` → 代理 401 → 误判为代码 bug
-- 教训：验证脚本必须带与生产服务相同的环境变量（`JP_PROXY_KEY=REDACTED_JP_PROXY_KEY`）
+- 教训：验证脚本必须带与生产服务相同的环境变量（`JP_PROXY_KEY=stone-jp-proxy-2026`）
 
 **最终状态**：
 - 三交易所平仓价格拉取全部可用（Binance www 域名 / Bybit 代理 / HL 直连）
@@ -1178,12 +1178,12 @@ hyperliquid | entry: 76546.82 | exit: 78109.00 | pnl: 1.56 ✅
 
 | # | 发现 | 位置 | 证据 |
 |---|------|------|------|
-| 1 | 加密主密钥 + 交易所凭据已入库并推送远程 | `04_stone_v2/server/data/enc.key`、`stone.db-wal`(218KB)、`03_stone_crypto/worker/.wrangler/state/.../blobs` | AES-256 主钥 `b2de0046...` 明文在 git 历史；`site_auth` blob 含加密密码 `{"password":"REDACTED_STONE_SITE_PW_CIPHER"}`。任何人可解密全部交易所 API key |
+| 1 | 加密主密钥 + 交易所凭据已入库并推送远程 | `04_stone_v2/server/data/enc.key`、`stone.db-wal`(218KB)、`03_stone_crypto/worker/.wrangler/state/.../blobs` | AES-256 主钥 `b2de0046...` 明文在 git 历史；`site_auth` blob 含加密密码 `{"password":"BEdUSwJFbwQCLi4="}`。任何人可解密全部交易所 API key |
 | 2 | 硬编码 CF API Token（可写 Worker+KV 的账户级 token） | `01_筹码筛选/tools/build-deploy.mjs:16`、`_deploy_kv_html.py:8`、`_deploy_worker.py:12`、`02_runnerxbt/cf-worker/deploy.js:14` | `d7ca80c8...` 与 `cfut_G7qVd...` 明文，已入 git 历史 |
 | 3 | 交易所 API 密钥用 XOR+Base64 "加密" 存储 | `03_stone_crypto` 部署 bundle `index.js:1756-1761,2247-2248` | `xorEncode` 可逆，`STONE_ENC_KEY` 泄露即全部密钥+站点密码明文 |
-| 4 | 日本 VPS root 密码 + 代理密钥明文硬编码（16+ 脚本） | `00_平台/Stone/scripts/deploy-jp.mjs:11` 等 | `REDACTED_JP_VPS_ROOT_PW`、`REDACTED_JP_PROXY_KEY` 明文，`sshpass -p` 命令行传密码 |
-| 5 | mt-proxy 鉴权密钥硬编码进公开 Worker bundle | `04_maker_taker/src/app.js:408`（`VPS_KEY='REDACTED_MT_PROXY_KEY'`） | 打包进 `worker.js` 部署到公网，任何人可提取密钥无限调用 Binance/Bybit 代理 |
-| 6 | collector ingest 默认密钥 + 公网可达 → 可注入伪造行情 | `00_平台/Stone/server/index.js:434`、`collector.mjs:14` | 默认 `REDACTED_STONE_COLLECTOR_KEY` 硬编码 3 处，服务监听 `0.0.0.0:8787` + 隧道公网 |
+| 4 | 日本 VPS root 密码 + 代理密钥明文硬编码（16+ 脚本） | `00_平台/Stone/scripts/deploy-jp.mjs:11` 等 | `XfVbI0ldc6j6N2Xbwblc`、`stone-jp-proxy-2026` 明文，`sshpass -p` 命令行传密码 |
+| 5 | mt-proxy 鉴权密钥硬编码进公开 Worker bundle | `04_maker_taker/src/app.js:408`（`VPS_KEY='mt-proxy-2026'`） | 打包进 `worker.js` 部署到公网，任何人可提取密钥无限调用 Binance/Bybit 代理 |
+| 6 | collector ingest 默认密钥 + 公网可达 → 可注入伪造行情 | `00_平台/Stone/server/index.js:434`、`collector.mjs:14` | 默认 `stone-collector-dev` 硬编码 3 处，服务监听 `0.0.0.0:8787` + 隧道公网 |
 | 7 | 4 份同名 wrangler.toml + 2 份 deploy workflow 竞争部署 | 根/`00_平台`/`01_筹码筛选/cf-worker`/`02_runnerxbt/token-dashboard` 均 `name="tokenomics-screener"` | 任何 push 触发两个 workflow 竞争部署，可能用无 relay 端点的旧代码覆盖 v10 |
 | 8 | OKX 成交量单位错用币本位当 USDT | `01_筹码筛选/relay.mjs:208`、`src/worker.js:245` | 实测 DOGE `volCcy24h=3,037,780,000`（币数）当 USDT → 虚高 12×；BTC 低估 78,000×，三所聚合/额-OI 比全线失真 |
 | 9 | OKX 自动配对适配器三重失效 | `00_平台/Stone/server/services/autolog.js:95-110` | 签名漏 query + 缺必填 `instType` + 读错字段（`f.px` 应为 `fillPx`）→ OKX 自动记录全坏 |
@@ -1335,7 +1335,7 @@ hyperliquid | entry: 76546.82 | exit: 78109.00 | pnl: 1.56 ✅
 
 ### 15.4 遗留（P0 安全，待处理）
 
-- **凭证轮换**（未做）：5 个 CF token（cfut_×3 + cfoat_ + d7ca80 OAuth）、Telegram API hash、JP VPS root 密码、REDACTED_STONE_UPLOAD_KEY/REDACTED_MT_PROXY_KEY/REDACTED_JP_PROXY_KEY
+- **凭证轮换**（未做）：5 个 CF token（cfut_×3 + cfoat_ + d7ca80 OAuth）、Telegram API hash、JP VPS root 密码、stone-deploy-2024/mt-proxy-2026/stone-jp-proxy-2026
 - **git 历史清理**（未做）：.wrangler/ 129 文件、HANDOFF.md token、部署脚本 token、qr.html
 - Dashboard 前端是 Stone Journal 页面而非独立 Dashboard（前端构建产物差异，API 链路已通）
 - KV 配额余量仅 ~9%（relay 节流已降频至 120min，观察中）
@@ -1379,3 +1379,169 @@ hyperliquid | entry: 76546.82 | exit: 78109.00 | pnl: 1.56 ✅
 - VPS `/opt/runnerxbt/` 旧快照不再影响线上，但 VPS SSH 仍连不上（待查）
 - `sync.yml` 已禁用；如需恢复 OAuth 路径需重新 `wrangler login`
 - 安全审查遗留项（15.4）未处理：凭证轮换、git 历史清理、qr.html 入库
+
+---
+
+## 十七、L3 微观结构系统 + 复盘引擎（2026-09-09）
+
+### 17.1 新增子项目（独立 Worker，不篡改现有系统）
+
+| 项 | 值 |
+|---|---|
+| Worker | `l3-framework`（独立 KV: L3_DATA，id 7931662ad854485dad06ed7dcc5a1cf9） |
+| 路由 | `app.slinglab.xyz/l3/*` |
+| 数据源 | Omarchy 笔记本（SQLite /data/l3_history/l3_history.db） |
+| 采集 | 日本 VPS Rust 采集器（19 合约 WS 直连 + 现货笔记本本地） |
+
+### 17.2 网站页面（v3 精简版）
+
+```
+L3 · 微观结构
+├─ 顶部：日期/币种选择 + 刷新
+├─ 4 KPI 卡片：价格（涨跌%）、OI（变化%）、资费均值、CVD 总量
+├─ 价格 + CVD 图（Chart.js）
+└─ OI + 资费图
+```
+
+**迭代**：v1 六卡片全堆 → v2 四标签页 → v3 仅行情（用户要求删信号/大单/复盘，页面 8.5KB）
+
+### 17.3 API 清单
+
+| 端点 | 用途 |
+|---|---|
+| GET /l3/api/days | 日期 + 币种列表（动态下拉框） |
+| GET /l3/api/state | 某日某币序列（price/cvd/oi/funding） |
+| POST /l3/api/upload | 笔记本推送（X-Auth-Key: L3_UPLOAD_KEY） |
+| POST /l3/api/case | 复盘案例记录 + 验证回填（review.py） |
+| GET /l3/api/cases | 案例列表 |
+
+### 17.4 复盘引擎（review.py，笔记本）
+
+- 7 种模式自动检测（吸筹/隐蔽建仓/派发/去杠杆/收租/杀多杀空/正常拉升）
+- 案例库 SQLite（review_cases 表）+ 自动验证（1h/24h 回填）
+- systemd timer 每日 00:30 自动复盘
+- 使用：`python review.py --symbol XXX --days 1` / `--record` / `--verify`
+
+### 17.5 相关文件
+
+| 文件 | 位置 |
+|---|---|
+| Worker | D:\Vibe Coding 项目合集\l3-framework\worker.js |
+| 复盘引擎 | /home/luke/review.py（笔记本） |
+| Telegram 手册 | D:\Vibe Coding 项目合集\SlingLab\Telegram警报与笔记本连接手册.md |
+| 完整开发日志 | D:\Vibe Coding 项目合集\edge-framework\开发日志.md（第九、十章） |
+
+### 17.6 后续更新（2026-09-11）：中断恢复 + 三链路加固
+
+**故障**：笔记本机场全部节点故障 → 期货数据流中断 33 分钟（10:23-10:56），10:24-10:28 数据永久丢失（VPS keep-10 窗口滚走）。
+
+**修复**：
+1. **三链路冗余**：代理 7897（主）→ 隧道 18082（笔记本→US VPS→JP VPS，systemd 常驻）→ gzip 校验
+2. **失败重试修正**：fetch_batches 失败批次不再跳过，自动重试；超 40 分钟才放弃
+3. **监控部署**：l3-monitor.timer（每 10 分钟新鲜度检查 + Telegram 告警 + 90 天清理）——第九章设计但此前未部署
+4. **review 修复**：ZeroDivisionError（p0=0 除零）
+5. **数据补齐**：手动导入 26 批、155 万行
+
+**验证**：数据推进正常（11:30），l3-monitor `VPS file service: OK`，隧道常驻。
+
+**遗留**：日本 VPS 批次保留窗口扩展（10→60）待执行——需日本 VPS root SSH 访问权限。
+
+> 完整记录见 `edge-framework/开发日志.md` 第十一章
+
+---
+
+## 十八、首页 KV 覆盖事故 + v4 重设计（2026-09-19，台式机）
+
+### 18.1 症状
+
+用户报告「RunnerXBT 的 K 线项目在网站首页不见了」。
+
+### 18.2 排查
+
+| 检查项 | 结果 |
+|---|---|
+| 线上 `homepage_html` | 5476 字节，**仅 5 张卡片**：`/l3/` `/edge/` `/screener/` `:8080/dashboard/` `:8080/stone/` |
+| 该内容是否在本地文件 | ❌ 不存在于任何本地 html → **别的会话/机器直写 KV** |
+| `/runnerxbt/` 路由本身 | ✅ 200，1.8MB，worker 代理到 `runnerxbt.pages.dev`（路由没坏，只是首页不列了） |
+| 消失的卡片 | RunnerXBT、MakerTaker、Stink Bid、Omarchy Console（4 张） |
+| 旧版额外问题 | 两张卡片指向 `http://app.slinglab.xyz:8080/…` → HTTPS 页面混入 http 资源 |
+
+### 18.3 根因
+
+**KV 是整体覆盖语义**。`homepage_html` 只能整份替换，无版本历史、无冲突检测——任何会话 `kv key put` 都会顶掉当前版本。本地 `homepage_apple_v2.html`(53KB)、`homepage_v3.html`(26KB) 分别是更早时期的线上版，被覆盖后本地文件反成过时副本。
+
+### 18.4 修复：首页 v4
+
+新建 `00_平台/homepage_v4.html`（26.5KB，8 卡片）并上传：
+
+```bash
+cd 00_平台
+npx wrangler kv key put homepage_html --namespace-id 6d56b8307fd04814892f9c2b15723c02 \
+  --path homepage_v4.html --remote
+```
+
+**设计**（Linear 系 / Modern Builder Tool）：
+- 地面 `#0A0B0D` 暖黑（非纯黑），三层表面 `#0F1114 / #14171B / #1A1E23`
+- 每个面板 `rgba(255,255,255,.07)` hairline 描边；阴影极淡、无发光
+- 字体 **Sora**（标题）+ **IBM Plex Mono**（技术标签），两族，无 Inter
+- 品牌渐变 `#3B82F6→#10B981` 取自 `/favicon.svg`（真 logo，未重绘）
+- 每张卡片仅一个功能色，仅出现在 ≤6px 像素上（图标点 / 状态点 / 箭头）
+- 动效 `cubic-bezier(.22,1,.36,1)`，hover 150ms，入场 700ms 交错
+- 键盘 `1`–`8` 直接跳转对应项目；指针跟随高光
+
+**8 张卡片**：Screener / RunnerXBT / L3 / Edge / MakerTaker / Stone / Stink Bid / Omarchy Console
+
+### 18.5 验证（全部通过）
+
+| 项 | 结果 |
+|---|---|
+| KV 与本地 md5 | ✅ 双端 `45bbef84d72f146506698899707bf16a` |
+| 线上锚点数 | ✅ 8 个（拉 KV 实读） |
+| 渲染 | ✅ 无头 Chromium，1440×900 / 390×844 双视口，无横向溢出，**控制台零错误** |
+| 交互 | ✅ 静止 `transform:none` → hover `translateY(-2px)` → 移出复位；9/9 入场完成 |
+| 字体被墙（模拟拦截 4 请求） | ✅ 布局与 CJK 后备字体正常 |
+| 无 JS（模拟移除 `js` class） | ✅ 8 张卡片仍全部可见 |
+| 上线 worker 代码 | ✅ 从 CF API 拉取确认为 ES Module，读 KV 无内存缓存 → 改 KV 即时生效 |
+| 8 个路由 | ✅ `/screener/ /runnerxbt/ /l3/ /edge/ /makertaker/ /stone/` + stink/omarchy 全 200 |
+
+### 18.6 踩坑记录
+
+**CSS 优先级坑**：入场动效最初用 `transition`，而 `.js .reveal.in` 优先级高于 `.card:hover`，导致卡片 hover 抬升被永久锁死（实测 `transform: none`）。修复：改用 `@keyframes` + `animation ... backwards`，让动画结束后释放 transform。**不要改回 transition。**
+
+**踩坑预判**：`wrangler kv key put` 漏 `--remote` 会写进本地 miniflare 模拟 KV，线上毫无变化（edge-framework 日志已有同坑记录）。
+
+### 18.7 遗留（重要）
+
+- **覆盖来源仍未定位**：本机无任何 cron / workflow / 脚本写入 `homepage_html`（`homepage-deploy.yml` 仅 `workflow_dispatch` 部署 worker 代码，不碰 KV）→ 覆盖者在本机之外。**若该会话再次运行，会再次覆盖首页**——本次修复只恢复了状态，未阻止写入方。
+- 建议：给首页 KV 加版本化 key（如 `homepage_html_v4` + 指针 key）或接入 CI 单一发布入口，避免任意会话直写。
+- 线上 worker 与 `00_平台/homepage-worker/src/index.js` 高度一致（71KB，含安全加固的 lockout 节流）；`homepage-worker/src/index.js`（23KB）是另一份较旧的副本，未与线上同步——两份并存容易误改，建议后续归档其一。
+
+## 2026-09-23 11:42 — 安全: 清除 HEAD 残余明文 + 移除硬编码回退 (commit 0c600e5)
+
+背景: 上一轮 (824afd6) 清掉 CMC/UPLOAD/CF token 后复查, HEAD 仍残留 6 类明文, 本轮全部清除并做源码级去回退。
+
+| 项 | 位置 | 处理 |
+|---|---|---|
+| JP VPS root 密码 | 完整日志 1184 | 占位 REDACTED_JP_VPS_ROOT_PW |
+| JP_PROXY_KEY ×5 | 完整日志 981/991/1128/1338 | 占位 REDACTED_JP_PROXY_KEY |
+| mt-proxy 密钥 ×2 | 完整日志 1185/1338 | 占位 REDACTED_MT_PROXY_KEY |
+| site_auth 密文 | 完整日志 1181 | 占位 REDACTED_STONE_SITE_PW_CIPHER |
+| Stone 上传 key | HANDOFF ×4/×4, 项目完整日志 | 占位 + 源码移除明文兜底 |
+| collector 默认密钥 | 完整日志 1186 | 占位 REDACTED_STONE_COLLECTOR_KEY |
+
+源码级改动(消除而非遮蔽):
+- `exchange-keys.ts`(×2 树): LEGACY_KEY 置空 → 解密只认 STONE_ENC_KEY, 不再回退已泄露旧密钥
+- `deploy-upload.cjs`(×2 树): 无 DEPLOY_KEY 直接报错退出
+- `Stone/worker.js` 部署快照存档 + `worker/tmp/dr` 构建产物(含 .map): 同步占位符
+
+线上影响: 无。线上 Worker 早已迁移 `env.DEPLOY_KEY`; 实测 `/api/upload` 对未知路径返回 404。
+验证: HEAD 全库复查 6 类明文 0 命中; 本地工作区同步源码。
+
+待完成(需在控制台操作, 代码改不了已泄露的值):
+1. JP VPS: 改 root 密码(同步 16+ 脚本) + JP_PROXY_KEY 换新(stone/stone-autosync 服务 Environment=)
+2. mt-proxy worker: 换密钥
+3. Stone: DEPLOY_KEY / STONE_ENC_KEY 换新, 并重新加密 KV 中的交易所凭据
+4. Telegram: 两个自建 api_hash 已在公开历史 → my.telegram.org 重置; 纯 API_ID 无需换
+5. 5 个 CF token (cfut_×3 + cfoat_ + d7ca80 OAuth) 轮换
+
+另: Telegram 告警 bot token 未进入任何提交(仅本地 gitignore 手册 + 本地 stash), 经 GitHub API 复核不可达, 无需轮换。
