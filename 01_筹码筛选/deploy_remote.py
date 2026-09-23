@@ -11,7 +11,9 @@ import time
 
 VPS_IP = "192.255.193.128"
 VPS_USER = "root"
-VPS_PASS = "7Jj6Mz80BcArGxE3m7"
+VPS_PASS = os.environ.get("VPS_PASS")
+if not VPS_PASS:
+    raise SystemExit("[deploy_remote] 缺少环境变量 VPS_PASS(该密码已从仓库移除, 轮换后请用环境变量传入)")
 VPS_PORT = 22
 PROXY_HOST = "127.0.0.1"
 PROXY_PORT = 7897

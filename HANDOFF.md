@@ -127,11 +127,11 @@ Start-Process -NoNewWindow -FilePath "cloudflared" -ArgumentList "tunnel --confi
 |-------|-------|
 | IP | 192.255.193.128 (connection timed out) |
 | User | root |
-| Password | 7Jj6Mz80BcArGxE3m7 |
+| Password | REDACTED_VPS_ROOT_PW |
 | Port | 22 |
 | Spec | 1 vCPU, 1GB RAM, 20GB SSD, Ubuntu 24.04 |
 | Price | $15.39/年 |
-| Panel | https://nerdvm.racknerd.com (user: vmuser352875, password: DCqPKommgV6m5LJ) |
+| Panel | https://nerdvm.racknerd.com (user: vmuser352875, password: REDACTED_VPS_PANEL_PW) |
 
 **Recovery Steps (如果 VPS 恢复):**
 1. SSH 登录并确认 `/opt/runnerxbt/` 项目存在

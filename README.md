@@ -104,7 +104,7 @@
 | CF OAuth token | `~/.wrangler/config/default.toml`（wrangler whoami 自动刷新） |
 | KV Namespace | `6d56b8307fd04814892f9c2b15723c02` |
 | CF Account | `REDACTED_CF_ACCOUNT_ID` |
-| 美国 VPS | `192.255.193.128` root / `7Jj6Mz80BcArGxE3m7`（SSH 22，可能直连或代理） |
+| 美国 VPS | `192.255.193.128` root / `REDACTED_VPS_ROOT_PW`（SSH 22，可能直连或代理） |
 | 日本 VPS | `23.27.52.165`（凭证不在项目内，需向用户索取） |
 | relay 认证 | `RELAY_AUTH_KEY=REDACTED_RELAY_AUTH_KEY`、`DEMON_RELAY_KEY=REDACTED_DEMON_RELAY_KEY`（也见 setup2.sh） |
 | GitHub | tokenomics-screener / runnerxbt-insights / slinglab-website |
