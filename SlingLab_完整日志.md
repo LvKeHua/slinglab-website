@@ -978,7 +978,7 @@ HL assets: USDC 116.44 ✅
 **用户报告**：`1 个账户同步失败: Bybit: proxy HTTP 401`，Bybit 账户未同步。
 
 **排查过程**（4 轮诊断）：
-1. **第一轮**：检查 stone/stone-autosync 服务环境变量 → 发现 `JP_PROXY_KEY` 未配置（安全加固时把默认值改为空字符串，但 systemd 没配环境变量）→ 给两个服务补 `Environment=JP_PROXY_KEY=stone-jp-proxy-2026` 并重启
+1. **第一轮**：检查 stone/stone-autosync 服务环境变量 → 发现 `JP_PROXY_KEY` 未配置（安全加固时把默认值改为空字符串，但 systemd 没配环境变量）→ 给两个服务补 `Environment=JP_PROXY_KEY=REDACTED_JP_PROXY_KEY` 并重启
 2. **第二轮**：仍 401 → 直接带 key 测试代理 → 代理返回 `{"status":401,"body":""}`（代理鉴权已通过，401 来自上游 Bybit）→ 检查签名逻辑（正确）→ 美国 VPS 直连 Bybit 被 403 地理封锁（代理必须）
 3. **第三轮**：解密数据库 key 测试 → 发现 Bybit 账户 key 是 `testkey`（7 位测试密钥）→ 数据库有 38 个账户，其中 32 个是测试垃圾（Binance 16 个 `fake-key`/单字符、Bybit 1 个 `testkey`、HL 15 个空地址 `0x0000000000`）
 4. **第四轮**：删除 32 个测试账户 → 剩 6 个 → autosync 仍 1 错误（HL `活跃钱包` 地址 43 位非法）→ 删除非法 + 重复地址 → 最终 4 个真实账户
@@ -988,7 +988,7 @@ HL assets: USDC 116.44 ✅
 - **验证脚本缺环境变量**：手动验证脚本进程没带 `JP_PROXY_KEY`（`JP_PROXY_KEY = ''` → 代理 401），非服务问题
 
 **修复内容**：
-1. stone/stone-autosync 服务补 `JP_PROXY_KEY=stone-jp-proxy-2026` 环境变量
+1. stone/stone-autosync 服务补 `JP_PROXY_KEY=REDACTED_JP_PROXY_KEY` 环境变量
 2. 删除 32 个测试账户（Binance 16 + HL 15 + Bybit 1）
 3. 删除 HL 非法地址（43 位）与重复地址账户
 
@@ -1125,7 +1125,7 @@ entry: 233.1037 | exit: 234 (快照 mark) | size: 0.82 | pnl: +$0.73
 
 **④ 测试脚本环境变量陷阱（记录）**
 - 手动测试脚本进程不带 `JP_PROXY_KEY` → 代理 401 → 误判为代码 bug
-- 教训：验证脚本必须带与生产服务相同的环境变量（`JP_PROXY_KEY=stone-jp-proxy-2026`）
+- 教训：验证脚本必须带与生产服务相同的环境变量（`JP_PROXY_KEY=REDACTED_JP_PROXY_KEY`）
 
 **最终状态**：
 - 三交易所平仓价格拉取全部可用（Binance www 域名 / Bybit 代理 / HL 直连）
@@ -1178,12 +1178,12 @@ hyperliquid | entry: 76546.82 | exit: 78109.00 | pnl: 1.56 ✅
 
 | # | 发现 | 位置 | 证据 |
 |---|------|------|------|
-| 1 | 加密主密钥 + 交易所凭据已入库并推送远程 | `04_stone_v2/server/data/enc.key`、`stone.db-wal`(218KB)、`03_stone_crypto/worker/.wrangler/state/.../blobs` | AES-256 主钥 `b2de0046...` 明文在 git 历史；`site_auth` blob 含加密密码 `{"password":"BEdUSwJFbwQCLi4="}`。任何人可解密全部交易所 API key |
+| 1 | 加密主密钥 + 交易所凭据已入库并推送远程 | `04_stone_v2/server/data/enc.key`、`stone.db-wal`(218KB)、`03_stone_crypto/worker/.wrangler/state/.../blobs` | AES-256 主钥 `b2de0046...` 明文在 git 历史；`site_auth` blob 含加密密码 `{"password":"REDACTED_STONE_SITE_PW_CIPHER"}`。任何人可解密全部交易所 API key |
 | 2 | 硬编码 CF API Token（可写 Worker+KV 的账户级 token） | `01_筹码筛选/tools/build-deploy.mjs:16`、`_deploy_kv_html.py:8`、`_deploy_worker.py:12`、`02_runnerxbt/cf-worker/deploy.js:14` | `d7ca80c8...` 与 `cfut_G7qVd...` 明文，已入 git 历史 |
 | 3 | 交易所 API 密钥用 XOR+Base64 "加密" 存储 | `03_stone_crypto` 部署 bundle `index.js:1756-1761,2247-2248` | `xorEncode` 可逆，`STONE_ENC_KEY` 泄露即全部密钥+站点密码明文 |
-| 4 | 日本 VPS root 密码 + 代理密钥明文硬编码（16+ 脚本） | `00_平台/Stone/scripts/deploy-jp.mjs:11` 等 | `XfVbI0ldc6j6N2Xbwblc`、`stone-jp-proxy-2026` 明文，`sshpass -p` 命令行传密码 |
-| 5 | mt-proxy 鉴权密钥硬编码进公开 Worker bundle | `04_maker_taker/src/app.js:408`（`VPS_KEY='mt-proxy-2026'`） | 打包进 `worker.js` 部署到公网，任何人可提取密钥无限调用 Binance/Bybit 代理 |
-| 6 | collector ingest 默认密钥 + 公网可达 → 可注入伪造行情 | `00_平台/Stone/server/index.js:434`、`collector.mjs:14` | 默认 `stone-collector-dev` 硬编码 3 处，服务监听 `0.0.0.0:8787` + 隧道公网 |
+| 4 | 日本 VPS root 密码 + 代理密钥明文硬编码（16+ 脚本） | `00_平台/Stone/scripts/deploy-jp.mjs:11` 等 | `REDACTED_JP_VPS_ROOT_PW`、`REDACTED_JP_PROXY_KEY` 明文，`sshpass -p` 命令行传密码 |
+| 5 | mt-proxy 鉴权密钥硬编码进公开 Worker bundle | `04_maker_taker/src/app.js:408`（`VPS_KEY='REDACTED_MT_PROXY_KEY'`） | 打包进 `worker.js` 部署到公网，任何人可提取密钥无限调用 Binance/Bybit 代理 |
+| 6 | collector ingest 默认密钥 + 公网可达 → 可注入伪造行情 | `00_平台/Stone/server/index.js:434`、`collector.mjs:14` | 默认 `REDACTED_STONE_COLLECTOR_KEY` 硬编码 3 处，服务监听 `0.0.0.0:8787` + 隧道公网 |
 | 7 | 4 份同名 wrangler.toml + 2 份 deploy workflow 竞争部署 | 根/`00_平台`/`01_筹码筛选/cf-worker`/`02_runnerxbt/token-dashboard` 均 `name="tokenomics-screener"` | 任何 push 触发两个 workflow 竞争部署，可能用无 relay 端点的旧代码覆盖 v10 |
 | 8 | OKX 成交量单位错用币本位当 USDT | `01_筹码筛选/relay.mjs:208`、`src/worker.js:245` | 实测 DOGE `volCcy24h=3,037,780,000`（币数）当 USDT → 虚高 12×；BTC 低估 78,000×，三所聚合/额-OI 比全线失真 |
 | 9 | OKX 自动配对适配器三重失效 | `00_平台/Stone/server/services/autolog.js:95-110` | 签名漏 query + 缺必填 `instType` + 读错字段（`f.px` 应为 `fillPx`）→ OKX 自动记录全坏 |
@@ -1335,7 +1335,7 @@ hyperliquid | entry: 76546.82 | exit: 78109.00 | pnl: 1.56 ✅
 
 ### 15.4 遗留（P0 安全，待处理）
 
-- **凭证轮换**（未做）：5 个 CF token（cfut_×3 + cfoat_ + d7ca80 OAuth）、Telegram API hash、JP VPS root 密码、stone-deploy-2024/mt-proxy-2026/stone-jp-proxy-2026
+- **凭证轮换**（未做）：5 个 CF token（cfut_×3 + cfoat_ + d7ca80 OAuth）、Telegram API hash、JP VPS root 密码、REDACTED_STONE_UPLOAD_KEY/REDACTED_MT_PROXY_KEY/REDACTED_JP_PROXY_KEY
 - **git 历史清理**（未做）：.wrangler/ 129 文件、HANDOFF.md token、部署脚本 token、qr.html
 - Dashboard 前端是 Stone Journal 页面而非独立 Dashboard（前端构建产物差异，API 链路已通）
 - KV 配额余量仅 ~9%（relay 节流已降频至 120min，观察中）

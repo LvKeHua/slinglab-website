@@ -61,11 +61,9 @@ env.sh
 SlingLab体检报告-*.md
 SlingLab安全修复日志-*.md
 *.pkl
-00_平台/HANDOFF.md
 00_平台/Stone/README.md
 00_平台/Stone/deploy/deploy-vps.sh
 00_平台/Stone/vps/mt-proxy.mjs
 04_maker_taker/scripts/test-jp-proxy.mjs
 04_maker_taker/vps/mt-proxy.mjs
 04_maker_taker/完整开发日志.md
-SlingLab_完整日志.md
