@@ -7,18 +7,65 @@ node_modules/
 __pycache__/
 *.pyc
 
-# ── 安全加固 2026-09-23: 禁止提交运行时数据 / 密钥 / 会话 ──
+# ── 安全：本地状态/缓存/部署产物，禁止入库 ──
+.wrangler/
+**/.wrangler/
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite-journal
+
+# ── SQLite 全部变体（stone.db 等交易所凭据库）──
 *.db
 *.db-shm
 *.db-wal
-*.sqlite
-*.sqlite3
+*.db-journal
+
+# ── 加密主密钥 / 私钥 / 凭据文件：泄露等同全部 API key 被解密 ──
 *.key
 *.pem
+enc.key
+*credentials*.json
+wrangler-account.json
+
+# ── Telegram 登录二维码（含一次性登录令牌）──
+qr.html
+
+# ── 含明文密钥的笔记本/日志（本地保留，禁止入库）──
+Telegram警报与笔记本连接手册.md
+Omarchy任务机完整日志.md
+
+# ── Telegram 登录态：泄露等同账号被接管，禁止入库 ──
 *.session
+*.session-journal
+
+# ── Bunker 站点产物：媒体体积 200MB+，由 pipeline 本地生成 ──
+03_bunker/site/
+
+# ── 安全：本地排查产物（含明文凭据副本），禁止入库 ──
+_leakprobe/
+_localfind.pkl
+_tok_tmp.json
+env.sh
+
+# ── Telegram 登录态与会话（泄露等同账号被接管）──
 *_telethon_session*
 *_td_session*
 **/tdata/
 **/_chrome_profile/
-_leakprobe/
-env.sh
+*.sqlite3
+03_bunker/data/media/
+
+# ── 2026-09-23 追加: 本地含明文凭据/会话, 轮换+env 化后再解除 ──
+00_平台/Stone/scripts/
+SlingLab体检报告-*.md
+SlingLab安全修复日志-*.md
+*.pkl
+00_平台/HANDOFF.md
+00_平台/Stone/README.md
+00_平台/Stone/deploy/deploy-vps.sh
+00_平台/Stone/vps/mt-proxy.mjs
+04_maker_taker/scripts/test-jp-proxy.mjs
+04_maker_taker/vps/mt-proxy.mjs
+04_maker_taker/完整开发日志.md
+SlingLab_完整日志.md
