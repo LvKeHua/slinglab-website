@@ -353,7 +353,7 @@ Supply 自检（无 CG 时也生效）:
 **Secrets:**
 | Name | Usage |
 |------|-------|
-| (none) | 上传认证 key `stone-deploy-2024` 在请求 body 中传输，非 Worker Secret |
+| (none) | 上传认证 key `REDACTED_STONE_UPLOAD_KEY` 在请求 body 中传输，非 Worker Secret |
 
 **API Endpoints:**
 
@@ -362,7 +362,7 @@ Supply 自检（无 CG 时也生效）:
 | GET | /stone/api/status | 项目健康状态 |
 | GET | /stone/api/trades | 交易列表 (从 KV) |
 | DELETE | /stone/api/trades/:id | 删除单条交易 |
-| POST | /stone/api/upload | 上传静态文件 (body: `{ key: "stone-deploy-2024", path, data, contentType }`) |
+| POST | /stone/api/upload | 上传静态文件 (body: `{ key: "REDACTED_STONE_UPLOAD_KEY", path, data, contentType }`) |
 | GET | /stone/ 等 SPA 路径 | Vue 3 SPA (history mode fallback → `/index.html`) |
 
 **KV Keys (in CMM_JOURNAL_DATA):**
@@ -379,7 +379,7 @@ Supply 自检（无 CG 时也生效）:
 cd D:\Vibe Coding 项目合集\SlingLab\Stone\
 npm run build
 # 1. Read dist/* files, base64 encode (use node -e, NOT ConvertTo-Json —后者会截断大base64)
-# 2. Upload via POST /stone/api/upload (body.key = "stone-deploy-2024")
+# 2. Upload via POST /stone/api/upload (body.key = "REDACTED_STONE_UPLOAD_KEY")
 # 3. Delete old asset hashes from KV
 ```
 
@@ -525,7 +525,7 @@ React 18 + MUI (dark theme) + Recharts + React Router v6
 | Worker Secret | CMC_API_KEY | (set in Cloudflare Secrets) | CoinMarketCap Pro API |
 | Worker Secret | COINGECKO_API_KEY | (set in Cloudflare Secrets) | CoinGecko API (可选) |
 | Worker Secret | UPLOAD_AUTH_KEY | (set in Cloudflare Secrets) | screener /api/upload 鉴权 |
-| Stone Upload Key | stone-deploy-2024 | (请求 body 中传输) | stone /api/upload 鉴权 |
+| Stone Upload Key | REDACTED_STONE_UPLOAD_KEY | (请求 body 中传输) | stone /api/upload 鉴权 |
 | Telegram | API ID | `REDACTED_TG_API_ID` | runnerxbt scraper |
 | Telegram | API Hash | `REDACTED_TG_API_HASH` | runnerxbt scraper |
 | Telegram | Phone | `+1 205 462 6980` | runnerxbt scraper |

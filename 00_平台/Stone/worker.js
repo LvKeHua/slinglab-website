@@ -82,7 +82,7 @@ addEventListener('fetch', function(event) {
   if (path === '/api/upload' && method === 'POST') {
     return event.respondWith(
       event.request.json().then(function(body) {
-        if (body.key !== 'stone-deploy-2024') {
+        if (body.key !== 'REDACTED_STONE_UPLOAD_KEY') {
           return jsonResp({ error: 'unauthorized' }, 403);
         }
         var kvKey = body.path;

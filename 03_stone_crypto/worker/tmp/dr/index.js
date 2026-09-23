@@ -913,7 +913,7 @@ function generateMockAssets() {
 __name(generateMockAssets, "generateMockAssets");
 
 // src/utils/exchange-keys.ts
-var LEGACY_KEY = "stone-deploy-2024";
+var LEGACY_KEY = "";
 function xorDecode(enc, key) {
   const str = atob(enc);
   let r = "";
@@ -934,6 +934,7 @@ async function getExchangeKeys(kv, encKey) {
         const v = xorDecode(enc, encKey);
         if (isPrintable(v)) return v;
       }
+      if (!LEGACY_KEY) return null;
       const legacy = xorDecode(enc, LEGACY_KEY);
       return isPrintable(legacy) ? legacy : null;
     }, "decode");

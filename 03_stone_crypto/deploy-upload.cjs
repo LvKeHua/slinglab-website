@@ -10,7 +10,11 @@ const ROOT = path.join(__dirname, "out")
 const API = "https://app.slinglab.xyz/stone/api/upload"
 // After the new worker deploys, set this to the DEPLOY_KEY secret value:
 //   set DEPLOY_KEY=<value>  (PowerShell) or export DEPLOY_KEY=<value> (bash)
-const DEPLOY_KEY = process.env.DEPLOY_KEY || "stone-deploy-2024"
+const DEPLOY_KEY = process.env.DEPLOY_KEY
+if (!DEPLOY_KEY) {
+  console.error("缺少 DEPLOY_KEY 环境变量(取 Cloudflare Worker Secret DEPLOY_KEY 的值)")
+  process.exit(1)
+}
 
 const MIME = {
   ".html": "text/html;charset=utf-8",

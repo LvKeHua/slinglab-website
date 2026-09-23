@@ -1,4 +1,4 @@
-const LEGACY_KEY = "stone-deploy-2024"
+const LEGACY_KEY = ""
 
 function xorDecode(enc: string, key: string): string {
   const str = atob(enc)
@@ -20,8 +20,8 @@ export interface ExchangeKeys {
 
 /**
  * Read XOR-encoded exchange API keys from KV storage and decode them with the
- * encryption key from the STONE_ENC_KEY secret binding (falling back to the
- * legacy hardcoded key so previously stored settings survive migration).
+ * encryption key from the STONE_ENC_KEY secret binding (falling back to a
+ * legacy key only if one is supplied).
  * Returns null for any exchange that hasn't been configured.
  */
 export async function getExchangeKeys(kv: KVNamespace, encKey?: string): Promise<ExchangeKeys> {
@@ -40,6 +40,7 @@ export async function getExchangeKeys(kv: KVNamespace, encKey?: string): Promise
         const v = xorDecode(enc, encKey)
         if (isPrintable(v)) return v
       }
+      if (!LEGACY_KEY) return null
       const legacy = xorDecode(enc, LEGACY_KEY)
       return isPrintable(legacy) ? legacy : null
     }
