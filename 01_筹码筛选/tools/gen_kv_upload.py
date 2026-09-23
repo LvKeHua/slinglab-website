@@ -4,7 +4,7 @@ Generate cloudflare_execute script to upload fresh data to KV.
 import json, os
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ACCOUNT = "1ab09277ed038add4925d28a343c9dc5"
+ACCOUNT = "REDACTED_CF_ACCOUNT_ID"
 KV_ID = "6d56b8307fd04814892f9c2b15723c02"
 
 # Read fresh data

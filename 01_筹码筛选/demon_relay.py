@@ -81,7 +81,7 @@ def main():
     ap.add_argument("--max-symbols", type=int, default=MAX_OI_SYMBOLS)
     args = ap.parse_args()
 
-    key = os.environ.get("DEMON_RELAY_KEY", "0eb3f463c85e160bbedbec6b3131bb862bdd0c82ccf9f390")
+    key = os.environ.get("DEMON_RELAY_KEY", "REDACTED_DEMON_RELAY_KEY")
     url = os.environ.get("WORKER_URL", "https://app.slinglab.xyz/screener/api/relay-demon")
 
     while True:

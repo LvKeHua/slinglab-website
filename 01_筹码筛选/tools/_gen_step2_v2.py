@@ -1,7 +1,7 @@
 import os, json
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-ACCOUNT_ID = "1ab09277ed038add4925d28a343c9dc5"
+ACCOUNT_ID = "REDACTED_CF_ACCOUNT_ID"
 KV_ID = "6d56b8307fd04814892f9c2b15723c02"
 WORKER_NAME = "tokenomics-screener"
 

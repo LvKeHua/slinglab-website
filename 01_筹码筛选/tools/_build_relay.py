@@ -12,7 +12,7 @@ assert anchor_consts in code, 'consts anchor missing'
 add_consts = (
     anchor_consts + "\n"
     "const DEMON_URL = process.env.DEMON_URL || 'https://app.slinglab.xyz/screener/api/relay-demon';\n"
-    "const DEMON_RELAY_KEY = process.env.DEMON_RELAY_KEY || '0eb3f463c85e160bbedbec6b3131bb862bdd0c82ccf9f390';\n"
+    "const DEMON_RELAY_KEY = process.env.DEMON_RELAY_KEY || 'REDACTED_DEMON_RELAY_KEY';\n"
     "const DEMON_MIN_VOL = 300000;\n"
     "const DEMON_MAX_SYMBOLS = 300;\n"
     "const OI_CONCURRENCY = 20;"

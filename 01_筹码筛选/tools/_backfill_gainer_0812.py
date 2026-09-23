@@ -3,8 +3,8 @@
 import json, datetime, urllib.request, ssl, sys
 
 PROXY = "http://127.0.0.1:7897"
-KV_PUT = "https://api.cloudflare.com/client/v4/accounts/1ab09277ed038add4925d28a343c9dc5/storage/kv/namespaces/6d56b8307fd04814892f9c2b15723c02/values/"
-TOKEN = "cfoat_ZiotRvYUXjg6hAvuGaVwkZGmWn2R-8ttiStUqYZoyWg.FAdaMefvHV-KIlZ8VaeVyHhct51yeZBOQOeGU56TEw0"
+KV_PUT = "https://api.cloudflare.com/client/v4/accounts/REDACTED_CF_ACCOUNT_ID/storage/kv/namespaces/6d56b8307fd04814892f9c2b15723c02/values/"
+TOKEN = "REDACTED_CF_OAUTH_TOKEN-8ttiStUqYZoyWg.FAdaMefvHV-KIlZ8VaeVyHhct51yeZBOQOeGU56TEw0"
 
 HOSTS = ['fapi.binance.com', 'fapi1.binance.com', 'fapi2.binance.com', 'fapi3.binance.com', 'fapi4.binance.com', 'fapi5.binance.com']
 

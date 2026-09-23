@@ -57,8 +57,8 @@ GitHub Actions（每 10 分钟，美国 IP 可用✅——数据源是 Telegram+
 
 | 项 | 值 |
 |----|-----|
-| Telegram API ID | `11830965` |
-| Telegram API Hash | `a18c4928951c653248430c0d51cb23c3` |
+| Telegram API ID | `REDACTED_TG_API_ID` |
+| Telegram API Hash | `REDACTED_TG_API_HASH` |
 | Telegram Phone | `+1 205 462 6980`（2FA 密码由用户持有） |
 | Telegram Session | `scraper/tg_session.session`（GA secret `TG_SESSION_B64` 存 base64） |
 | CF Token（Pages） | secret `CF_API_TOKEN` |

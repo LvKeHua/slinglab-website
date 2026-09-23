@@ -21,7 +21,7 @@ app.slinglab.xyz
 
 | 项 | 值 |
 |----|-----|
-| Account ID | `1ab09277ed038add4925d28a343c9dc5` |
+| Account ID | `REDACTED_CF_ACCOUNT_ID` |
 | Zone ID | `3b21d2fc8d5e020709d21d74f95753c2` |
 | 根域名 | slinglab.xyz（NS: aarav/jacqueline.cloudflare.com） |
 | Workers.dev | cmm-trading-journal.workers.dev |

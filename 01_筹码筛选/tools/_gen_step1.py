@@ -9,7 +9,7 @@ with open(os.path.join(BASE_DIR, "frontend", "index.html"), "r", encoding="utf-8
 escaped = html.replace("\\", "\\\\").replace("`", "\\`").replace("${", "\\${")
 
 KV_ID = "6d56b8307fd04814892f9c2b15723c02"
-ACCOUNT_ID = "1ab09277ed038add4925d28a343c9dc5"
+ACCOUNT_ID = "REDACTED_CF_ACCOUNT_ID"
 
 code = f'''async () => {{
   const html = `{escaped}`;

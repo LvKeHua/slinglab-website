@@ -12,8 +12,8 @@ const __dirname = dirname(fileURLToPath(import.meta.url));
 
 // ─── Config ───
 const CF_API = 'https://api.cloudflare.com/client/v4';
-const ACCOUNT_ID = '1ab09277ed038add4925d28a343c9dc5';
-const API_TOKEN = 'd7ca80c814708d4015dd782b3e327789:wx1sLSdRcMdddK5d:9uuLTQtM07QjVpuGlXe66nmCOLxnVxtP';
+const ACCOUNT_ID = 'REDACTED_CF_ACCOUNT_ID';
+const API_TOKEN = 'REDACTED_CF_GLOBAL_KEY:REDACTED_CF_ACCOUNT_EMAIL:REDACTED_CF_GLOBAL_KEY2';
 const KV_NAMESPACE_ID = '6d56b8307fd04814892f9c2b15723c02'; // TOKENOMICS_MARKET_DATA
 const WORKER_NAME = 'tokenomics-screener';
 

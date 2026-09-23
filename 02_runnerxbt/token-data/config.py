@@ -47,7 +47,7 @@ KV_DATA_KEY = "market_data"
 KV_HTML_KEY = "dashboard_html"
 
 # Cloudflare API (uses env vars or direct config)
-CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "1ab09277ed038add4925d28a343c9dc5")
+CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "REDACTED_CF_ACCOUNT_ID")
 CF_API_TOKEN = os.getenv("CF_API_TOKEN", "")
 
 # ── GitHub Actions ───────────────────────────────────────

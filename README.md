@@ -103,10 +103,10 @@
 |----|---------|
 | CF OAuth token | `~/.wrangler/config/default.toml`（wrangler whoami 自动刷新） |
 | KV Namespace | `6d56b8307fd04814892f9c2b15723c02` |
-| CF Account | `1ab09277ed038add4925d28a343c9dc5` |
+| CF Account | `REDACTED_CF_ACCOUNT_ID` |
 | 美国 VPS | `192.255.193.128` root / `7Jj6Mz80BcArGxE3m7`（SSH 22，可能直连或代理） |
 | 日本 VPS | `23.27.52.165`（凭证不在项目内，需向用户索取） |
-| relay 认证 | `RELAY_AUTH_KEY=55e313c395c3c93a212754423b53ffff0396cfa98f32c4c9fe5b45000f803a99`、`DEMON_RELAY_KEY=0eb3f463c85e160bbedbec6b3131bb862bdd0c82ccf9f390`（也见 setup2.sh） |
+| relay 认证 | `RELAY_AUTH_KEY=REDACTED_RELAY_AUTH_KEY`、`DEMON_RELAY_KEY=REDACTED_DEMON_RELAY_KEY`（也见 setup2.sh） |
 | GitHub | tokenomics-screener / runnerxbt-insights / slinglab-website |
 
 ---
@@ -127,7 +127,7 @@ tok = open(os.path.expanduser('~/.wrangler/config/default.toml'), encoding='utf-
 TOKEN = re.search(r'oauth_token\s*=\s*"([^"]+)"', tok).group(1)
 proxy = urllib.request.ProxyHandler({'http': 'http://127.0.0.1:7897', 'https': 'http://127.0.0.1:7897'})
 opener = urllib.request.build_opener(proxy)
-url = 'https://api.cloudflare.com/client/v4/accounts/1ab09277ed038add4925d28a343c9dc5/storage/kv/namespaces/6d56b8307fd04814892f9c2b15723c02/values/dashboard_html'
+url = 'https://api.cloudflare.com/client/v4/accounts/REDACTED_CF_ACCOUNT_ID/storage/kv/namespaces/6d56b8307fd04814892f9c2b15723c02/values/dashboard_html'
 req = urllib.request.Request(url, data=html.encode('utf-8'), method='PUT', headers={'Authorization': f'Bearer {TOKEN}', 'Content-Type': 'text/html; charset=utf-8'})
 print(json.loads(opener.open(req, timeout=90).read())['success'])
 EOF

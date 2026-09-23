@@ -12,7 +12,7 @@ with open(os.path.join(BASE_DIR, "__fresh_meta.json"), "r", encoding="utf-8") as
 # Generate the JS code for cloudflare_execute
 js_code = '''async () => {
   const KV_ID = "6d56b8307fd04814892f9c2b15723c02";
-  const ACCOUNT = "1ab09277ed038add4925d28a343c9dc5";
+  const ACCOUNT = "REDACTED_CF_ACCOUNT_ID";
 
   // Upload all 3 KV keys
   const updateResult = await cloudflare.request({

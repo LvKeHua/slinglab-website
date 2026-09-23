@@ -46,7 +46,7 @@
 | Root Domain | slinglab.xyz |
 | App Subdomain | app.slinglab.xyz |
 | Account Email | lukehua815@gmail.com |
-| Cloudflare Account ID | 1ab09277ed038add4925d28a343c9dc5 |
+| Cloudflare Account ID | REDACTED_CF_ACCOUNT_ID |
 | Zone ID | 3b21d2fc8d5e020709d21d74f95753c2 |
 | Plan | Free (with Workers) |
 | NS Servers | aarav.ns.cloudflare.com, jacqueline.ns.cloudflare.com |
@@ -57,9 +57,9 @@
 
 | Token Name | Value | Scope |
 |------------|-------|-------|
-| sisyphus-zone-mgmt | cfut_G7qVdtoYCESmyWr8enA90KWGfAC3YLMgax2uhv8Hfb2bf262 | Zone management |
-| sisyphus-zone-create | cfut_zvtVfyuXhaznq8ncyAKz60G5lK2dxd9dVrjprpr0120cebaf | Zone create |
-| sisyphus-tunnel-mgmt | cfut_Oo3RjBt3nfdi3PrmFTfbAgnUaqCYFIzUL1lbUt3h8689a0a3 | Tunnel management |
+| sisyphus-zone-mgmt | REDACTED_CF_API_TOKEN | Zone management |
+| sisyphus-zone-create | REDACTED_CF_API_TOKEN | Zone create |
+| sisyphus-tunnel-mgmt | REDACTED_CF_API_TOKEN | Tunnel management |
 
 ### DNS Records
 
@@ -244,7 +244,7 @@ addEventListener('fetch', event => {
 | CMC_API_KEY | (set in Cloudflare Secrets) | 全局变量 `CMC_API_KEY`（非 `env.CMC_API_KEY`） |
 | COINGECKO_API_KEY | (set in Cloudflare Secrets) | 全局变量 `COINGECKO_API_KEY` |
 | UPLOAD_AUTH_KEY | `(set in Cloudflare Secrets)` | 全局变量 `UPLOAD_AUTH_KEY` |
-| RELAY_AUTH_KEY | `55e313c395c3c93a212754423b53ffff0396cfa98f32c4c9fe5b45000f803a99` | 全局变量 `RELAY_AUTH_KEY` |
+| RELAY_AUTH_KEY | `REDACTED_RELAY_AUTH_KEY` | 全局变量 `RELAY_AUTH_KEY` |
 
 **⚠️ SW vs ES Module Secrets 差异（关键）:**
 
@@ -517,17 +517,17 @@ React 18 + MUI (dark theme) + Recharts + React Router v6
 
 | Category | Key Name | Value / Location | Description |
 |----------|----------|------------------|-------------|
-| Cloudflare | Account ID | `1ab09277ed038add4925d28a343c9dc5` | 全局账户 |
+| Cloudflare | Account ID | `REDACTED_CF_ACCOUNT_ID` | 全局账户 |
 | Cloudflare | Zone ID | `3b21d2fc8d5e020709d21d74f95753c2` | slinglab.xyz |
-| Cloudflare | sisyphus-zone-mgmt | cfut_G7qVdtoYCESmyWr8enA90KWGfAC3YLMgax2uhv8Hfb2bf262 | Zone management |
-| Cloudflare | sisyphus-zone-create | cfut_zvtVfyuXhaznq8ncyAKz60G5lK2dxd9dVrjprpr0120cebaf | Zone create |
-| Cloudflare | sisyphus-tunnel-mgmt | cfut_Oo3RjBt3nfdi3PrmFTfbAgnUaqCYFIzUL1lbUt3h8689a0a3 | Tunnel management |
+| Cloudflare | sisyphus-zone-mgmt | REDACTED_CF_API_TOKEN | Zone management |
+| Cloudflare | sisyphus-zone-create | REDACTED_CF_API_TOKEN | Zone create |
+| Cloudflare | sisyphus-tunnel-mgmt | REDACTED_CF_API_TOKEN | Tunnel management |
 | Worker Secret | CMC_API_KEY | (set in Cloudflare Secrets) | CoinMarketCap Pro API |
 | Worker Secret | COINGECKO_API_KEY | (set in Cloudflare Secrets) | CoinGecko API (可选) |
 | Worker Secret | UPLOAD_AUTH_KEY | (set in Cloudflare Secrets) | screener /api/upload 鉴权 |
 | Stone Upload Key | stone-deploy-2024 | (请求 body 中传输) | stone /api/upload 鉴权 |
-| Telegram | API ID | `11830965` | runnerxbt scraper |
-| Telegram | API Hash | `a18c4928951c653248430c0d51cb23c3` | runnerxbt scraper |
+| Telegram | API ID | `REDACTED_TG_API_ID` | runnerxbt scraper |
+| Telegram | API Hash | `REDACTED_TG_API_HASH` | runnerxbt scraper |
 | Telegram | Phone | `+1 205 462 6980` | runnerxbt scraper |
 
 ### 5.3 GitHub Repositories

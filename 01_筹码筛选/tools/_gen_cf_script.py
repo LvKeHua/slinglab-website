@@ -237,7 +237,7 @@ export default {
 # Step 2: Deploy Worker via multipart
 
 script = f'''async () => {{
-  const ACCOUNT_ID = "{__import__('os').environ.get('ACCOUNT_ID', '1ab09277ed038add4925d28a343c9dc5')}";
+  const ACCOUNT_ID = "{__import__('os').environ.get('ACCOUNT_ID', 'REDACTED_CF_ACCOUNT_ID')}";
   const KV_ID = "6d56b8307fd04814892f9c2b15723c02";
   const WORKER_NAME = "tokenomics-screener";
   const ZONE_ID = "3b21d2fc8d5e020709d21d74f95753c2";

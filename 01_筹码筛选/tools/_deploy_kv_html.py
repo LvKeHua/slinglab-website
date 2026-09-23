@@ -3,9 +3,9 @@ import json
 import os
 import urllib.request
 
-ACCOUNT_ID = "1ab09277ed038add4925d28a343c9dc5"
+ACCOUNT_ID = "REDACTED_CF_ACCOUNT_ID"
 KV_ID = "6d56b8307fd04814892f9c2b15723c02"
-TOKEN = "cfut_G7qVdtoYCESmyWr8enA90KWGfAC3YLMgax2uhv8Hfb2bf262"
+TOKEN = "REDACTED_CF_API_TOKEN"
 BASE = os.path.dirname(os.path.abspath(__file__))
 
 def kv_put(key, value):

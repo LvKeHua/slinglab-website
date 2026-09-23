@@ -50,8 +50,8 @@ D:\Vibe Coding 项目合集\runnerxbt\
 ### Telethon 登录流程
 1. **发现 Telegram Desktop** 安装在 `D:\Telegram\Telegram Desktop\Telegram.exe`
 2. **Telegram API 初始化**：
-   - API ID: `11830965`
-   - API Hash: `a18c4928951c653248430c0d51cb23c3`
+   - API ID: `REDACTED_TG_API_ID`
+   - API Hash: `REDACTED_TG_API_HASH`
    - Phone: `+1 205 462 6980`
 4. **QR 扫码登录**（多次失败后成功）：
    - 首次尝试因 `ipv4` 参数错误失败
@@ -116,8 +116,8 @@ D:\Vibe Coding 项目合集\runnerxbt\
 
 #### Cloudflare 域名接入
 - 第一步: 创建 API Token（Zone Write + DNS Write 权限）
-  - Token 1 (sisyphus-zone-mgmt): `cfut_G7qVdtoYCESmyWr8enA90KWGfAC3YLMgax2uhv8Hfb2bf262`
-  - Token 2 (sisyphus-zone-create): `cfut_zvtVfyuXhaznq8ncyAKz60G5lK2dxd9dVrjprpr0120cebaf`
+  - Token 1 (sisyphus-zone-mgmt): `REDACTED_CF_API_TOKEN`
+  - Token 2 (sisyphus-zone-create): `REDACTED_CF_API_TOKEN`
 - 第二步: 用户通过 Cloudflare Dashboard 添加域名（API Token 权限不足）
 - 第三步: 在 Spaceship 修改 Nameservers
   - 从: `launch1.spaceship.net` / `launch2.spaceship.net`
@@ -129,8 +129,8 @@ D:\Vibe Coding 项目合集\runnerxbt\
 - Tunnel 名称: `runnerxbt-tunnel`
 - 凭证文件: `C:\Users\admin\.cloudflared\f8ea2e9d-3c9b-499e-8422-60e377e915a7.json`
 - 配置文件: `C:\Users\admin\.cloudflared\config.yml`
-- Token 3 (sisyphus-tunnel-mgmt): `cfut_Oo3RjBt3nfdi3PrmFTfbAgnUaqCYFIzUL1lbUt3h8689a0a3`
-- Cloudflare Account ID: `1ab09277ed038add4925d28a343c9dc5`
+- Token 3 (sisyphus-tunnel-mgmt): `REDACTED_CF_API_TOKEN`
+- Cloudflare Account ID: `REDACTED_CF_ACCOUNT_ID`
 
 #### DNS 记录
 | 类型 | 名称 | 目标 |
@@ -152,9 +152,9 @@ D:\Vibe Coding 项目合集\runnerxbt\
 
 | 名称 | Token 值 | 权限 | 用途 |
 |---|---|---|---|
-| sisyphus-zone-mgmt | cfut_G7qVdtoYCESmyWr8enA90KWGfAC3YLMgax2uhv8Hfb2bf262 | Zone Write + DNS Write | DNS 管理 |
-| sisyphus-zone-create | cfut_zvtVfyuXhaznq8ncyAKz60G5lK2dxd9dVrjprpr0120cebaf | Account Settings Write + Zone Write + DNS Write | 域名管理 |
-| sisyphus-tunnel-mgmt | cfut_Oo3RjBt3nfdi3PrmFTfbAgnUaqCYFIzUL1lbUt3h8689a0a3 | Cloudflare Tunnel Write | Tunnel 管理 |
+| sisyphus-zone-mgmt | REDACTED_CF_API_TOKEN | Zone Write + DNS Write | DNS 管理 |
+| sisyphus-zone-create | REDACTED_CF_API_TOKEN | Account Settings Write + Zone Write + DNS Write | 域名管理 |
+| sisyphus-tunnel-mgmt | REDACTED_CF_API_TOKEN | Cloudflare Tunnel Write | Tunnel 管理 |
 
 ### Tunnel 配置文件 (config.yml)
 ```yaml
@@ -259,7 +259,7 @@ Start-Process -NoNewWindow -FilePath "cloudflared" -ArgumentList "tunnel --confi
 | 域名 | `slinglab.xyz` |
 | 子域名 | `app.slinglab.xyz` → RunnerXBT |
 | 账户邮箱 | `lukehua815@gmail.com` |
-| Account ID | `1ab09277ed038add4925d28a343c9dc5` |
+| Account ID | `REDACTED_CF_ACCOUNT_ID` |
 | NS 服务器 | `aarav.ns.cloudflare.com`, `jacqueline.ns.cloudflare.com` |
 
 ### ③ Cloudflare Tunnel（免开放服务器端口）
@@ -361,7 +361,7 @@ location /新项目名/ {
 >
 > **② Cloudflare**
 > 域名: slinglab.xyz, 账户: lukehua815@gmail.com
-> Account ID: 1ab09277ed038add4925d28a343c9dc5
+> Account ID: REDACTED_CF_ACCOUNT_ID
 >
 > **③ Tunnel**
 > ID: f8ea2e9d-3c9b-499e-8422-60e377e915a7, 名: runnerxbt-tunnel
