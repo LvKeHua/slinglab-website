@@ -249,15 +249,3 @@ if __name__ == "__main__":
         logger.info("Validated %d coins", len(result))
     else:
         logger.error("No merged snapshot found. Run collector.py first.")
-
-    # ── 筛币器外部看门狗 ──────────────────────────────────────────
-    # collect.yml 每小时运行本文件；借此在 GitHub 基础设施上（与美国 VPS 完全独立）
-    # 检查筛币器数据新鲜度，过期则触发待机 relay。
-    # 补的是「美国 VPS 整机下线时，其本地 guard.sh 也一并消失」这个缺口。
-    # 看门狗内部吞掉一切异常，绝不会影响上述数据采集主流程。
-    try:
-        from screener_watchdog import check_screener_health
-
-        check_screener_health()
-    except Exception as exc:  # noqa: BLE001
-        logger.warning("screener watchdog skipped: %s", exc)

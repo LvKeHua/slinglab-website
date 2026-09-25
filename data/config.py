@@ -48,7 +48,11 @@ KV_DATA_KEY = "collector_data"
 KV_HTML_KEY = "dashboard_html"
 
 # Cloudflare API (uses env vars or direct config)
-CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "REDACTED_CF_ACCOUNT_ID")
+# 账号 ID 运行期从 CF API 解析（或由环境变量覆盖）：
+# 原先硬编码的占位符 "REDACTED_CF_ACCOUNT_ID" 会让所有 KV 写入 404
+# （error 7003 Could not route to /accounts/REDACTED_CF_ACCOUNT_ID/...），
+# 2026-09-25 日志确认 collect.yml 的 KV 推送长期因此失败。
+CF_ACCOUNT_ID = os.getenv("CF_ACCOUNT_ID", "")
 CF_API_TOKEN = os.getenv("CF_API_TOKEN", "")
 
 # ── GitHub Actions ───────────────────────────────────────

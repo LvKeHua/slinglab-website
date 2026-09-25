@@ -28,9 +28,35 @@ def _cf_headers() -> dict:
     }
 
 
+_resolved_account_id: Optional[str] = None
+
+
+def _account_id() -> str:
+    """
+    解析 Cloudflare account ID。
+
+    优先用环境变量/配置；未配置时调 /accounts 自动解析（token 必然绑定账号）。
+    这样账号 ID 无需写进公开仓库，也修掉了原先占位符导致的 7003 路由错误。
+    """
+    global _resolved_account_id
+    if CF_ACCOUNT_ID:
+        return CF_ACCOUNT_ID
+    if _resolved_account_id:
+        return _resolved_account_id
+    resp = requests.get(f"{CF_API_BASE}/accounts", headers=_cf_headers(), timeout=30)
+    if resp.status_code != 200:
+        raise RuntimeError(f"cannot list CF accounts ({resp.status_code}): {resp.text[:200]}")
+    accounts = (resp.json() or {}).get("result") or []
+    if not accounts:
+        raise RuntimeError("CF token has no accessible accounts")
+    _resolved_account_id = accounts[0]["id"]
+    logger.info("resolved CF account id: %s...", _resolved_account_id[:8])
+    return _resolved_account_id
+
+
 def kv_put(key: str, value: str) -> bool:
     """Write a string value to Cloudflare KV."""
-    url = f"{CF_API_BASE}/accounts/{CF_ACCOUNT_ID}/storage/kv/namespaces/{KV_NAMESPACE_ID}/values/{key}"
+    url = f"{CF_API_BASE}/accounts/{_account_id()}/storage/kv/namespaces/{KV_NAMESPACE_ID}/values/{key}"
     resp = requests.put(url, headers=_cf_headers(), data=value.encode("utf-8"))
     if resp.status_code == 200:
         logger.info("KV written: %s (%d bytes)", key, len(value))
@@ -42,7 +68,7 @@ def kv_put(key: str, value: str) -> bool:
 
 def kv_get(key: str) -> Optional[str]:
     """Read a string value from Cloudflare KV."""
-    url = f"{CF_API_BASE}/accounts/{CF_ACCOUNT_ID}/storage/kv/namespaces/{KV_NAMESPACE_ID}/values/{key}"
+    url = f"{CF_API_BASE}/accounts/{_account_id()}/storage/kv/namespaces/{KV_NAMESPACE_ID}/values/{key}"
     resp = requests.get(url, headers=_cf_headers())
     if resp.status_code == 200:
         return resp.text
@@ -75,7 +101,29 @@ def push_to_kv(coins: list[dict]) -> bool:
     """Push the data to Cloudflare KV for the dashboard to consume."""
     payload = build_dashboard_payload(coins)
     json_str = json.dumps(payload, ensure_ascii=False)
-    return kv_put(KV_DATA_KEY, json_str)
+    ok = kv_put(KV_DATA_KEY, json_str)
+    _maybe_run_screener_standby()
+    return ok
+
+
+def _maybe_run_screener_standby() -> None:
+    """
+    筛币器外部待机检查（美国 VPS 整机失联时接管抓取）。
+
+    调用点选在这里的原因：collect.yml 每小时的「Push to Cloudflare KV」步骤
+    是本仓库唯一注入了 CF_API_TOKEN 的地方，而待机需要它直写 KV。
+
+    补的缺口：美国 VPS 上的 guard.sh 虽有三级自愈，但 L1/L2 都跑在那台机器上——
+    整机下线时自愈能力随之消失（2026-09-24 日本节点事故即为此类）。
+
+    待机模块内部吞掉一切异常，绝不会影响本仓库的数据采集主流程。
+    """
+    try:
+        from screener_standby import run_standby
+
+        run_standby()
+    except Exception as exc:  # noqa: BLE001
+        logger.warning("screener standby skipped: %s", exc)
 
 
 # ── Summary ───────────────────────────────────────────────

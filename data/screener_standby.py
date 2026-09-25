@@ -1,8 +1,9 @@
 """
-Screener external standby relay — 筛币器外部待机 relay（美国 VPS 失联时接管）
+Screener external standby — 筛币器外部待机抓取（美国 VPS 整机失联时接管）
 
-由 slinglab-website 的 collect.yml 每小时调用，运行在 **GitHub Actions 基础设施**上，
-与被监控的美国 VPS (192.255.193.128) 完全独立。
+调用点：reporter.push_to_kv() 的 finally 分支。
+环境：slinglab-website 的 collect.yml「Push to Cloudflare KV」步骤，
+      该步骤注入 CF_API_TOKEN —— 因此本模块无需任何新增密钥。
 
 为什么需要它
 ------------
@@ -10,35 +11,28 @@ Screener external standby relay — 筛币器外部待机 relay（美国 VPS 失
 根因是「单一抓取节点 + 单一恢复路径」：美国 VPS 上的 monitor.sh 唯一恢复手段是
 SSH 到那个已经死掉的节点，于是连跑 288 次 recovery-failed 也无法自愈。
 
-美国 VPS 现有三级自愈（guard.sh），但 L1/L2 都跑在那台机器上——
-**美国 VPS 整机下线时，自愈能力随之消失**。本模块补的正是这个缺口。
+美国 VPS 现有三级自愈（guard.sh：L1 本地补跑 / L2 触发 GA relay / L3 告警），
+但 L1 和 L2 都**跑在那台机器上**——美国 VPS 整机下线时，自愈能力随之消失。
+本模块补的正是这个缺口：从 GitHub Actions（独立基础设施）观测并接管抓取。
 
-当前防护层次
-------------
-| 场景 | 接管者 | 覆盖范围 |
-|------|--------|----------|
-| 主 relay 推送失败 | guard.sh L1（本地补跑） | 全部（含 forward） |
-| 本地补跑无效 ≥3 次 | guard.sh L2（触发 GA relay.yml） | 全部（含 forward） |
-| **美国 VPS 整机下线** | **本模块（collect.yml 每小时）** | market/demon/coinfilter |
+覆盖范围与边界
+--------------
+恢复：exchange_proxy（行情）/ demon_data / coinfilter_data
+     → 来源新鲜度回归、界面解冻、涨幅榜归档可被 worker 自愈回填
 
-能力边界（重要）
-----------------
-本模块恢复 exchange_proxy / demon_data / coinfilter_data，使行情与来源新鲜度回归、
-数据不再断档，涨幅榜归档也能被 worker 自愈回填。
+不恢复：forward_data（蓄水候选评分）
+     → 需要 100 天日线 × 700+ 币的结构评分（relay.mjs 的 computeForwardScore），
+       在 collect.yml 的 10 分钟预算内重实现必然与主实现漂移。
+       该场景下候选池会显示「候选(数据过期)」而非伪装成实时值——
+       这是 worker 的既有降级设计，属于正确行为。
 
-它**不恢复** forward_data（蓄水候选评分）——那需要 100 天日线 × 715 币的完整结构
-评分逻辑（relay.mjs 的 computeForwardScore），在 collect.yml 的 10 分钟预算内重实现
-既慢又必然与主实现漂移。该场景下候选池需等 relay.yml 待机通道跑完（约 16 分钟）后
-自然回归；本模块的作用是不让整体状态因三源过期而彻底冻结。
-
-设计约束
---------
+安全与约束
+----------
 - 仅在数据过期时动作；健康时只做一次 HTTP 查询，零副作用
-- 绝不抛异常影响 collect.yml 主流程（数据采集才是本仓库主职责）
-- 不修改任何 workflow 文件（token 无 workflow scope，且不应绕过该约束）
-- 不硬编码任何凭据或账号 ID：复用 collect.yml 已注入的 CF_API_TOKEN
-- 只用标准库（urllib），不新增依赖
-- 合并上一份快照以保留本模块无法抓取的字段（资金费/盘口/多空比等）
+- 绝不抛异常影响 collect.yml 主流程（该流程的主职责是 token 数据采集）
+- 复用已有 CF_API_TOKEN，不新增/不硬编码任何凭据
+- 合并上一份 KV 快照，保留本模块抓不到的字段（资金费/盘口/多空比等）
+- 只依赖 requests（该仓库既有依赖）
 """
 
 from __future__ import annotations
@@ -48,10 +42,10 @@ import json
 import logging
 import os
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
 from datetime import datetime, timezone
+from typing import Optional
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -60,60 +54,122 @@ STATUS_URL = os.getenv(
     "SCREENER_STATUS_URL",
     "https://app.slinglab.xyz/screener/api/status?standby=1",
 )
+CF_API_BASE = "https://api.cloudflare.com/client/v4"
 KV_NAMESPACE_ID = os.getenv("SCREENER_KV_NS", "6d56b8307fd04814892f9c2b15723c02")
-CF_API = "https://api.cloudflare.com/client/v4"
 
 # ── 抓取参数（口径对齐 relay.mjs）───────────────────────────
 BROWSER_UA = (
     "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
     "(KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36"
 )
-HTTP_TIMEOUT = 30
-# fapi.binance.com 对 GitHub/数据中心 IP 返回 451；www.binance.com/fapi 是 web 端点，
+# fapi.binance.com 对数据中心 IP 返回 451；www.binance.com/fapi 是 web 端点，
 # 2026-09-25 实测从 GA 可用（relay.mjs 2026-09-11 提交 3666d81 为此加了域名回退）
 BINANCE_HOSTS = ["www.binance.com", "fapi.binance.com", "fapi3.binance.com"]
 
+HTTP_TIMEOUT = 30
 OI_CONCURRENCY = 8
-OI_DELAY_S = 0.12         # 每请求节流，避免触发 Binance 权重限流
-OI_BUDGET_S = 240         # OI 抓取总预算，超时即用已有部分
-OI_TOP_N = 250            # 只覆盖成交额前 N 个合约
-MIN_ROWS = 120            # 满足 worker hRCF 门槛（>=100 行且 80% 可用）
+OI_DELAY_S = 0.12       # 每请求节流，避免触发 Binance 权重限流
+OI_BUDGET_S = 200       # OI 抓取总预算；超时即用已抓到的部分
+OI_TOP_N = 250          # 只覆盖成交额前 N 个合约
+MIN_ROWS = 120          # worker hRCF 门槛：>=100 行且 80% 字段可用
 
 
 def _now() -> str:
     return datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
 
-def _get_json(url: str, headers: dict | None = None, timeout: int = HTTP_TIMEOUT):
-    req = urllib.request.Request(url, headers=headers or {})
-    with urllib.request.urlopen(req, timeout=timeout) as resp:
-        return json.load(resp)
+def _cf_headers(token: str) -> dict:
+    return {"Authorization": f"Bearer {token}", "User-Agent": "slinglab-screener-standby"}
 
 
-def _is_stale() -> bool:
-    """读筛币器状态。不可达视为过期（宁可可恢复一次，也不静默）。"""
+def _resolve_account_id(token: str) -> Optional[str]:
+    """运行期解析账号 ID，避免把账号 ID 写进公开仓库。"""
     try:
-        payload = _get_json(STATUS_URL)
+        resp = requests.get(
+            f"{CF_API_BASE}/accounts", headers=_cf_headers(token), timeout=30
+        )
+        if resp.status_code != 200:
+            logger.error("cannot list CF accounts (%s)", resp.status_code)
+            return None
+        accounts = (resp.json() or {}).get("result") or []
+        if not accounts:
+            logger.error("CF token has no accessible accounts")
+            return None
+        return accounts[0]["id"]
+    except Exception as exc:  # noqa: BLE001
+        logger.error("account resolve failed: %s", exc)
+        return None
+
+
+def _kv_get(key: str, token: str, account: str) -> Optional[dict]:
+    url = (
+        f"{CF_API_BASE}/accounts/{account}/storage/kv/namespaces/"
+        f"{KV_NAMESPACE_ID}/values/{key}"
+    )
+    try:
+        resp = requests.get(url, headers=_cf_headers(token), timeout=30)
+        return resp.json() if resp.status_code == 200 else None
+    except Exception:  # noqa: BLE001
+        return None
+
+
+def _kv_put(key: str, payload: dict, token: str, account: str) -> bool:
+    url = (
+        f"{CF_API_BASE}/accounts/{account}/storage/kv/namespaces/"
+        f"{KV_NAMESPACE_ID}/values/{key}"
+    )
+    body = json.dumps(payload, ensure_ascii=False)
+    try:
+        resp = requests.put(
+            url,
+            headers={**_cf_headers(token), "Content-Type": "text/plain"},
+            data=body.encode(),
+            timeout=45,
+        )
+        if resp.status_code == 200:
+            logger.info("KV %s written (%d bytes)", key, len(body))
+            return True
+        logger.error("KV %s failed: HTTP %s %s", key, resp.status_code, resp.text[:200])
+    except Exception as exc:  # noqa: BLE001
+        logger.error("KV %s failed: %s", key, exc)
+    return False
+
+
+# ── 是否该接管 ──────────────────────────────────────────────
+
+def should_take_over() -> bool:
+    """读筛币器状态。健康→False；过期或不可达→True（宁可可恢复一次也不静默）。"""
+    try:
+        resp = requests.get(STATUS_URL, timeout=25)
+        if resp.status_code != 200:
+            logger.warning("status HTTP %s — assuming stale", resp.status_code)
+            return True
+        payload = resp.json()
         if payload.get("stale") is False:
-            logger.info("screener healthy — standby not needed")
+            logger.info("screener healthy (stale=false) — standby idle")
             return False
-        logger.warning("screener reports stale")
+        logger.warning("screener reports stale — standby taking over")
         return True
     except Exception as exc:  # noqa: BLE001
         logger.warning("status unreachable (%s) — assuming stale", exc)
         return True
 
 
-# ── 交易所抓取 ──────────────────────────────────────────────
+# ── 抓取 ────────────────────────────────────────────────────
 
 def fetch_binance_tickers() -> list[dict]:
     """全市场 USDT 永续 tickers，逐域名回退。"""
     for host in BINANCE_HOSTS:
         try:
-            raw = _get_json(
+            resp = requests.get(
                 f"https://{host}/fapi/v1/ticker/24hr",
                 headers={"User-Agent": BROWSER_UA},
+                timeout=HTTP_TIMEOUT,
             )
+            if resp.status_code != 200:
+                logger.info("binance %s HTTP %s", host, resp.status_code)
+                continue
+            raw = resp.json()
         except Exception as exc:  # noqa: BLE001
             logger.info("binance %s failed: %s", host, exc)
             continue
@@ -125,8 +181,7 @@ def fetch_binance_tickers() -> list[dict]:
                 continue
             try:
                 price = float(t["lastPrice"])
-                high = float(t["highPrice"])
-                low = float(t["lowPrice"])
+                high, low = float(t["highPrice"]), float(t["lowPrice"])
                 vol = float(t["quoteVolume"])
                 chg = float(t["priceChangePercent"])
             except (KeyError, TypeError, ValueError):
@@ -148,7 +203,7 @@ def fetch_binance_tickers() -> list[dict]:
     return []
 
 
-def fetch_binance_oi(symbols: list[str], budget_s: int = OI_BUDGET_S) -> dict[str, float]:
+def fetch_binance_oi(symbols: list[str]) -> dict[str, float]:
     """逐合约抓 OI（币数）。并发 + 节流，口径对齐 relay.mjs。"""
     host_idx = 0
     result: dict[str, float] = {}
@@ -159,14 +214,16 @@ def fetch_binance_oi(symbols: list[str], budget_s: int = OI_BUDGET_S) -> dict[st
         for attempt in range(len(BINANCE_HOSTS)):
             host = BINANCE_HOSTS[(host_idx + attempt) % len(BINANCE_HOSTS)]
             try:
-                d = _get_json(
-                    f"https://{host}/fapi/v1/openInterest"
-                    f"?symbol={urllib.parse.quote(sym)}",
+                resp = requests.get(
+                    f"https://{host}/fapi/v1/openInterest",
+                    params={"symbol": sym},
                     headers={"User-Agent": BROWSER_UA},
                     timeout=15,
                 )
+                if resp.status_code != 200:
+                    continue
                 host_idx = (host_idx + attempt) % len(BINANCE_HOSTS)
-                val = float(d["openInterest"])
+                val = float(resp.json()["openInterest"])
                 return (sym, val) if val >= 0 else None
             except Exception:  # noqa: BLE001
                 continue
@@ -175,7 +232,7 @@ def fetch_binance_oi(symbols: list[str], budget_s: int = OI_BUDGET_S) -> dict[st
     with concurrent.futures.ThreadPoolExecutor(max_workers=OI_CONCURRENCY) as pool:
         futures = []
         for sym in symbols:
-            if time.time() - started > budget_s:
+            if time.time() - started > OI_BUDGET_S:
                 logger.warning("OI budget exhausted at %d/%d", len(result), len(symbols))
                 break
             futures.append(pool.submit(one, sym))
@@ -195,9 +252,17 @@ def fetch_binance_oi(symbols: list[str], budget_s: int = OI_BUDGET_S) -> dict[st
 def fetch_okx_tickers() -> list[dict]:
     """OKX 全量永续 tickers（单请求）。"""
     try:
-        payload = _get_json("https://www.okx.com/api/v5/market/tickers?instType=SWAP")
+        resp = requests.get(
+            "https://www.okx.com/api/v5/market/tickers",
+            params={"instType": "SWAP"},
+            timeout=HTTP_TIMEOUT,
+        )
+        if resp.status_code != 200:
+            logger.info("okx HTTP %s", resp.status_code)
+            return []
+        payload = resp.json()
     except Exception as exc:  # noqa: BLE001
-        logger.info("okx tickers failed: %s", exc)
+        logger.info("okx failed: %s", exc)
         return []
 
     rows = []
@@ -226,78 +291,16 @@ def fetch_okx_tickers() -> list[dict]:
     return rows
 
 
-# ── Cloudflare KV ───────────────────────────────────────────
+# ── 组装（合并旧快照以保留抓不到的字段）────────────────────
 
-def _cf_headers() -> dict | None:
-    token = os.getenv("CF_API_TOKEN", "")
-    if not token:
-        logger.error("CF_API_TOKEN missing; cannot push standby data")
-        return None
-    return {
-        "Authorization": f"Bearer {token}",
-        "User-Agent": "slinglab-screener-standby",
-    }
-
-
-def _resolve_account_id(headers: dict) -> str | None:
-    """运行期解析账号 ID，避免把账号 ID 写进公开仓库。"""
-    try:
-        d = _get_json(f"{CF_API}/accounts", headers=headers)
-    except Exception as exc:  # noqa: BLE001
-        logger.error("cannot list CF accounts: %s", exc)
-        return None
-    accounts = d.get("result") or []
-    if not accounts:
-        logger.error("CF token has no accessible accounts")
-        return None
-    return accounts[0].get("id")
-
-
-def kv_get(key: str, headers: dict, account: str):
-    url = (
-        f"{CF_API}/accounts/{account}/storage/kv/namespaces/"
-        f"{KV_NAMESPACE_ID}/values/{key}"
-    )
-    try:
-        req = urllib.request.Request(url, headers=headers)
-        with urllib.request.urlopen(req, timeout=30) as resp:
-            return json.load(resp)
-    except Exception as exc:  # noqa: BLE001
-        logger.info("KV %s read miss (%s)", key, exc)
-        return None
-
-
-def kv_put(key: str, payload, headers: dict, account: str) -> bool:
-    url = (
-        f"{CF_API}/accounts/{account}/storage/kv/namespaces/"
-        f"{KV_NAMESPACE_ID}/values/{key}"
-    )
-    body = json.dumps(payload, ensure_ascii=False).encode()
-    req = urllib.request.Request(
-        url, data=body, method="PUT",
-        headers={**headers, "Content-Type": "text/plain"},
-    )
-    try:
-        with urllib.request.urlopen(req, timeout=45) as resp:
-            logger.info("KV %s: HTTP %s (%d bytes)", key, resp.status, len(body))
-            return resp.status == 200
-    except urllib.error.HTTPError as exc:
-        logger.error("KV %s failed: HTTP %s %s", key, exc.code, exc.read()[:200])
-    except Exception as exc:  # noqa: BLE001
-        logger.error("KV %s failed: %s", key, exc)
-    return False
-
-
-# ── 组装（合并上一份快照，保留无法抓取的字段）──────────────
-
-def _prev_rows(snapshot) -> dict[str, dict]:
+def _prev_rows(snapshot: Optional[dict]) -> dict[str, dict]:
     if not isinstance(snapshot, dict):
         return {}
     rows = snapshot.get("data") or []
     return {r["symbol"]: r for r in rows if isinstance(r, dict) and r.get("symbol")}
 
 
-def build_coinfilter(binance: list[dict], oi_map: dict[str, float], prev) -> dict:
+def build_coinfilter(binance: list[dict], oi_map: dict, prev: Optional[dict]) -> dict:
     prev_map = _prev_rows(prev)
     top = sorted(binance, key=lambda r: -(r.get("volume_24h_usdt") or 0))[:OI_TOP_N]
     rows = []
@@ -318,7 +321,7 @@ def build_coinfilter(binance: list[dict], oi_map: dict[str, float], prev) -> dic
             "oi_value": round(oi_value, 2),
             "oi_contracts": oi,
             "volume_oi_ratio": round(vol / oi_value, 4) if oi_value > 0 else 0,
-            # 以下字段本模块无法抓取：沿用上一份快照，避免 UI 列变空白
+            # 以下字段本模块无法抓取：沿用上一份快照，避免界面列变空白
             "funding_rate_pct": p.get("funding_rate_pct"),
             "orderbook_depth_usdt": p.get("orderbook_depth_usdt"),
             "listing_date": p.get("listing_date"),
@@ -345,7 +348,7 @@ def build_coinfilter(binance: list[dict], oi_map: dict[str, float], prev) -> dic
     }
 
 
-def build_demon(binance: list[dict], oi_map: dict[str, float], prev) -> dict:
+def build_demon(binance: list[dict], oi_map: dict, prev: Optional[dict]) -> dict:
     prev_map = _prev_rows(prev)
     rows = []
     for r in binance:
@@ -377,21 +380,20 @@ def build_demon(binance: list[dict], oi_map: dict[str, float], prev) -> dict:
 
 def run_standby() -> bool:
     """
-    外部待机 relay 主入口。
+    外部待机主入口。
 
-    返回 True 表示「无需动作或已成功接管」，False 表示「确认异常且接管失败」。
+    返回 True = 无需动作或已成功接管；False = 确认异常且接管失败。
     绝不抛异常——调用方（collect.yml 的数据采集主流程）不应受任何影响。
     """
     try:
-        if not _is_stale():
+        if not should_take_over():
             return True
 
-        logger.warning("screener stale — external standby taking over")
-
-        headers = _cf_headers()
-        if not headers:
+        token = os.getenv("CF_API_TOKEN", "")
+        if not token:
+            logger.error("CF_API_TOKEN missing; cannot push standby data")
             return False
-        account = _resolve_account_id(headers)
+        account = _resolve_account_id(token)
         if not account:
             return False
 
@@ -402,40 +404,33 @@ def run_standby() -> bool:
         okx = fetch_okx_tickers()
 
         # 1) exchange_proxy：行情主数据（worker 的涨幅榜自愈也依赖它）
-        pushed = kv_put("exchange_proxy", {
+        pushed = _kv_put("exchange_proxy", {
             "binance": binance,
             "okx": okx,
             "updated": _now(),
             "standby": True,
-        }, headers, account)
+        }, token, account)
 
-        # 2) OI → demon/coinfilter（读旧快照以保留无法抓取的字段）
+        # 2) OI → demon / coinfilter
         top = sorted(binance, key=lambda r: -(r.get("volume_24h_usdt") or 0))
         oi_map = fetch_binance_oi([r["symbol"] for r in top[:OI_TOP_N]])
 
         if len(oi_map) >= MIN_ROWS:
-            pushed &= kv_put(
+            pushed &= _kv_put(
                 "demon_data",
-                build_demon(binance, oi_map, kv_get("demon_data", headers, account)),
-                headers, account,
+                build_demon(binance, oi_map, _kv_get("demon_data", token, account)),
+                token, account,
             )
-            pushed &= kv_put(
+            pushed &= _kv_put(
                 "coinfilter_data",
-                build_coinfilter(binance, oi_map, kv_get("coinfilter_data", headers, account)),
-                headers, account,
+                build_coinfilter(binance, oi_map, _kv_get("coinfilter_data", token, account)),
+                token, account,
             )
         else:
-            logger.warning("OI coverage too low (%d < %d); tickers only", len(oi_map), MIN_ROWS)
+            logger.warning("OI coverage low (%d < %d); tickers only", len(oi_map), MIN_ROWS)
 
         logger.info("standby finished (pushed=%s)", pushed)
         return pushed
     except Exception as exc:  # noqa: BLE001 — 待机绝不能影响主流程
         logger.error("standby crashed (ignored): %s", exc)
         return False
-
-
-if __name__ == "__main__":
-    logging.basicConfig(
-        level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
-    )
-    run_standby()
