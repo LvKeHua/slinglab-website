@@ -145,20 +145,36 @@ def _kv_put(key: str, payload: dict, token: str, account: str) -> bool:
 # ── 是否该接管 ──────────────────────────────────────────────
 
 def should_take_over() -> bool:
-    """读筛币器状态。健康→False；过期或不可达→True（宁可可恢复一次也不静默）。"""
+    """
+    读筛币器状态，判断待机是否应当接管。
+
+    只有「本模块救得了」的过期才接管，避免在生产上做无用写入：
+      - market / demon / coinfilter 过期 → 可救（tickers + OI 即可重建）
+      - 仅 forward 过期 → 不接管：forward 需要 100 天日线做结构评分，
+        直写救不了（只能靠 relay 触发路径，那条路已独立于本判断）
+      - 状态不可达 → 接管（宁可可恢复一次，也不静默停摆）
+    """
     try:
         resp = requests.get(STATUS_URL, timeout=25)
         if resp.status_code != 200:
-            logger.warning("status HTTP %s — assuming stale", resp.status_code)
+            print(f"[standby] status HTTP {resp.status_code} —— 视为不可达")
             return True
         payload = resp.json()
         if payload.get("stale") is False:
-            logger.info("screener healthy (stale=false) — standby idle")
+            print("[standby] 筛币器健康 (stale=false) —— 待机空闲")
             return False
-        logger.warning("screener reports stale — standby taking over")
+        sources = payload.get("sources") or {}
+        fixable = [
+            k for k in ("market", "demon", "coinfilter")
+            if (sources.get(k) or {}).get("stale")
+        ]
+        if not fixable:
+            print("[standby] 仅不可直写修复的字段过期（如 forward）—— 待机不接管")
+            return False
+        print(f"[standby] 过期且可修复的数据源: {', '.join(fixable)}")
         return True
     except Exception as exc:  # noqa: BLE001
-        logger.warning("status unreachable (%s) — assuming stale", exc)
+        print(f"[standby] status 不可达 ({exc}) —— 视为需要接管")
         return True
 
 
