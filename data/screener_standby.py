@@ -69,9 +69,16 @@ BINANCE_HOSTS = ["www.binance.com", "fapi.binance.com", "fapi3.binance.com"]
 HTTP_TIMEOUT = 30
 OI_CONCURRENCY = 8
 OI_DELAY_S = 0.12       # 每请求节流，避免触发 Binance 权重限流
-OI_BUDGET_S = 200       # OI 抓取总预算；超时即用已抓到的部分
-OI_TOP_N = 250          # 只覆盖成交额前 N 个合约
-MIN_ROWS = 120          # worker hRCF 门槛：>=100 行且 80% 字段可用
+OI_BUDGET_S = 200       # OI 抓取总预算；超时用已抓到的部分（实测全量 727 币 93s）
+MIN_ROWS = 600          # 绝不发布比线上更小的快照（线上 727 行，见 NO_DEGRADE_RATIO）
+
+# 降级保护：只有当新快照行数不少于线上当前快照的此比例时才写入。
+# 原因：worker 的 hRCF 只要求 >=100 行，若我们写入一个 250 行的残缺快照，
+# 它会当作有效数据接受，直接把线上 727 行覆盖成 250 行 —— 静默降级。
+NO_DEGRADE_RATIO = float(os.getenv("STANDBY_NO_DEGRADE_RATIO", "0.9"))
+
+# 演练开关：跑完抓取与组装但不写 KV（用于在生产环境安全验证接管链路）
+DRY_RUN = os.getenv("STANDBY_DRY_RUN", "") == "1"
 
 
 def _now() -> str:
@@ -302,7 +309,7 @@ def _prev_rows(snapshot: Optional[dict]) -> dict[str, dict]:
 
 def build_coinfilter(binance: list[dict], oi_map: dict, prev: Optional[dict]) -> dict:
     prev_map = _prev_rows(prev)
-    top = sorted(binance, key=lambda r: -(r.get("volume_24h_usdt") or 0))[:OI_TOP_N]
+    top = sorted(binance, key=lambda r: -(r.get("volume_24h_usdt") or 0))
     rows = []
     for r in top:
         oi = oi_map.get(r["symbol"])
@@ -376,25 +383,95 @@ def build_demon(binance: list[dict], oi_map: dict, prev: Optional[dict]) -> dict
     return {"data": rows, "updated": _now(), "count": len(rows)}
 
 
+# ── 首选路径：触发真 relay（保真度最高）─────────────────────
+
+WORKFLOW_REPO = os.getenv("STANDBY_REPO", "LvKeHua/tokenomics-screener")
+WORKFLOW_FILE = os.getenv("STANDBY_WORKFLOW", "relay.yml")
+
+
+def dispatch_full_relay() -> Optional[int]:
+    """
+    请求 GitHub 触发 tokenomics-screener/relay.yml（即 relay.mjs 全量管线）。
+
+    为什么优先走这条路：relay.mjs 能恢复本模块恢复不了的东西——
+    forward_data（蓄水候选评分，需 100 天日线）与 oi_stage（需 OI 历史，
+    relay 存在本地 cache/），以及资金费/盘口/多空比/爆仓。
+    本模块的直写只是它的降级替代品。
+
+    需要 SCREENER_RELAY_TOKEN（fine-grained PAT，Actions: write）。
+    未配置则返回 None，由调用方走直写。
+    """
+    token = os.getenv("SCREENER_RELAY_TOKEN", "")
+    if not token:
+        print("[standby] 未配置 SCREENER_RELAY_TOKEN —— 跳过 relay 触发，走直写")
+        return None
+    url = f"https://api.github.com/repos/{WORKFLOW_REPO}/actions/workflows/{WORKFLOW_FILE}/dispatches"
+    try:
+        resp = requests.post(
+            url,
+            headers={
+                "Authorization": f"Bearer {token}",
+                "Accept": "application/vnd.github+json",
+                "X-GitHub-Api-Version": "2022-11-28",
+            },
+            json={"ref": "main"},
+            timeout=30,
+        )
+    except Exception as exc:  # noqa: BLE001
+        logger.error("dispatch failed: %s", exc)
+        return None
+    if resp.status_code == 204:
+        print(f"[standby] 已触发 {WORKFLOW_REPO}/{WORKFLOW_FILE}（relay.mjs 全量管线）")
+        return 0
+    print(f"[standby] 触发失败 HTTP {resp.status_code}: {resp.text[:160]}")
+    return None
+
+
+def wait_for_relay(timeout_s: int = 600) -> bool:
+    """等待 relay 恢复新鲜度（GA relay 一轮约 5 分钟）。"""
+    deadline = time.time() + timeout_s
+    while time.time() < deadline:
+        time.sleep(20)
+        try:
+            resp = requests.get(STATUS_URL, timeout=25)
+            if resp.status_code == 200 and resp.json().get("stale") is False:
+                print("[standby] relay 已恢复数据新鲜度")
+                return True
+        except Exception:  # noqa: BLE001
+            continue
+    print(f"[standby] relay {timeout_s}s 内未恢复，转直写")
+    return False
+
 # ── 主入口 ──────────────────────────────────────────────────
 
 def run_standby() -> bool:
     """
     外部待机主入口。
 
-    返回 True = 无需动作或已成功接管；False = 确认异常且接管失败。
+    返回 True = 无需动作、已成功接管、或安全跳过；False = 确认异常且接管失败。
     绝不抛异常——调用方（collect.yml 的数据采集主流程）不应受任何影响。
     """
     try:
+        if DRY_RUN:
+            print("[standby] DRY_RUN=1 —— 演练模式（跑完抓取与组装，不写 KV）")
         if not should_take_over():
             return True
+        print("[standby] 筛币器数据过期 —— 外部待机接管")
 
+        # ① 首选：触发真 relay（relay.mjs 全量，含 forward_data / oi_stage / 资金费）
+        if not DRY_RUN and dispatch_full_relay() == 0:
+            if wait_for_relay():
+                return True
+            print("[standby] relay 未在时限内恢复 —— 转直写兜底")
+
+        # ② 兜底：直接写 KV（本模块自抓自算；覆盖面见模块头「覆盖范围与边界」）
         token = os.getenv("CF_API_TOKEN", "")
-        if not token:
+        # 演练模式不需要凭据——它本就不写 KV，用于验证抓取与组装链路
+        account = ""
+        if token:
+            account = _resolve_account_id(token)
+        elif not DRY_RUN:
             logger.error("CF_API_TOKEN missing; cannot push standby data")
-            return False
-        account = _resolve_account_id(token)
-        if not account:
             return False
 
         binance = fetch_binance_tickers()
@@ -402,34 +479,68 @@ def run_standby() -> bool:
             logger.error("binance unavailable from this runner; standby aborted")
             return False
         okx = fetch_okx_tickers()
+        print(f"[standby] 抓取完成 binance={len(binance)} okx={len(okx)}")
 
-        # 1) exchange_proxy：行情主数据（worker 的涨幅榜自愈也依赖它）
-        pushed = _kv_put("exchange_proxy", {
-            "binance": binance,
-            "okx": okx,
-            "updated": _now(),
-            "standby": True,
-        }, token, account)
-
-        # 2) OI → demon / coinfilter
+        # 全量覆盖（实测 727 币约 93s，远低于 OI_BUDGET_S）。
+        # 早先版本只取成交额前 250，会把线上 727 行覆盖成 250 行 —— 静默降级，已修。
         top = sorted(binance, key=lambda r: -(r.get("volume_24h_usdt") or 0))
-        oi_map = fetch_binance_oi([r["symbol"] for r in top[:OI_TOP_N]])
+        oi_map = fetch_binance_oi([r["symbol"] for r in top])
+        print(f"[standby] OI 覆盖 {len(oi_map)}/{len(top)}")
 
-        if len(oi_map) >= MIN_ROWS:
-            pushed &= _kv_put(
-                "demon_data",
-                build_demon(binance, oi_map, _kv_get("demon_data", token, account)),
-                token, account,
+        if DRY_RUN:
+            demon = build_demon(binance, oi_map, None)
+            coinfilter = build_coinfilter(binance, oi_map, None)
+            print(
+                f"[standby] DRY_RUN 结果 demon={len(demon['data'])} "
+                f"coinfilter={len(coinfilter['data'])} (未写 KV)"
             )
-            pushed &= _kv_put(
-                "coinfilter_data",
-                build_coinfilter(binance, oi_map, _kv_get("coinfilter_data", token, account)),
-                token, account,
-            )
+            return True
+
+        prev_demon = _kv_get("demon_data", token, account)
+        prev_coinfilter = _kv_get("coinfilter_data", token, account)
+
+        # 1) 组装
+        demon = build_demon(binance, oi_map, prev_demon)
+        coinfilter = build_coinfilter(binance, oi_map, prev_coinfilter)
+
+        # 2) 降级保护：新快照不得显著小于线上现有快照
+        pushed = True
+        for key, snap, prev in (
+            ("demon_data", demon, prev_demon),
+            ("coinfilter_data", coinfilter, prev_coinfilter),
+        ):
+            live_n = len(_prev_rows(prev))
+            new_n = len(snap["data"])
+            if new_n < MIN_ROWS or new_n < live_n * NO_DEGRADE_RATIO:
+                logger.error(
+                    "skip %s: would degrade %d -> %d rows", key, live_n, new_n
+                )
+                print(f"[standby] 跳过 {key}：新快照 {new_n} 行 < 线上 {live_n} 行（降级保护）")
+                pushed = False
+                continue
+            pushed &= _kv_put(key, snap, token, account)
+
+        # 3) exchange_proxy：行情主数据（worker 的涨幅榜自愈也依赖它）。
+        #    只在行情待机接管（tickers 全量拿到）才写，避免用残缺行情覆盖。
+        if len(binance) >= MIN_ROWS:
+            prev_proxy = _kv_get("exchange_proxy", token, account) or {}
+            payload = {
+                "binance": binance,
+                "okx": okx,
+                "updated": _now(),
+                "standby": True,
+            }
+            # bybit 对美 IP 返回 403（relay.mjs 注释亦然）。若上一份快照有 bybit 数据，
+            # 原样带上：worker 的 refreshData 会按 symbol 取成交额最大者，多一个来源只增不减。
+            if isinstance(prev_proxy.get("bybit"), list) and prev_proxy["bybit"]:
+                payload["bybit"] = prev_proxy["bybit"]
+                print(f"[standby] 沿用上一份 bybit 数据 {len(prev_proxy['bybit'])} 行")
+            pushed &= _kv_put("exchange_proxy", payload, token, account)
         else:
-            logger.warning("OI coverage low (%d < %d); tickers only", len(oi_map), MIN_ROWS)
+            logger.error("skip exchange_proxy: only %d tickers", len(binance))
+            pushed = False
 
-        logger.info("standby finished (pushed=%s)", pushed)
+        print(f"[standby] 接管完成: binance={len(binance)} oi={len(oi_map)} pushed={pushed}")
         return pushed
     except Exception as exc:  # noqa: BLE001 — 待机绝不能影响主流程
         logger.error("standby crashed (ignored): %s", exc)
