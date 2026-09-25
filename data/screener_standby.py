@@ -89,8 +89,44 @@ NO_DEGRADE_RATIO = float(os.getenv("STANDBY_NO_DEGRADE_RATIO", "0.9"))
 # 该指标是筛选器的主信号，口径一旦错（例如只聚合了单一交易所）必须宁可不动。
 RATIO_TOLERANCE = float(os.getenv("STANDBY_RATIO_TOLERANCE", "0.3"))
 
-# 演练开关：跑完抓取、聚合与校验，但不写 KV（用于在生产环境安全验证全链路）
-DRY_RUN = os.getenv("STANDBY_DRY_RUN", "") == "1"
+
+def _drill_requested() -> bool:
+    """
+    是否请求演练（自失效）。
+
+    collect.yml 的 job 不传任何待机相关环境变量，而本仓库 deploy key 无
+    workflow scope（改不了 workflow 文件），故以标记文件作演练开关。
+
+    标记内容约定为**失效时间戳**（epoch 秒）：过了该时刻自动不再演练。
+    runner 是临时的、跑完无法回写仓库，因此不能靠「跑完删除」来收尾；
+    改用时间窗，既保证只演练一次，也不会留下长期有效的开关。
+
+    演练 = 强制走接管分支、跑完抓取/聚合/校验全链路，但**绝不写 KV**，
+    在生产环境执行亦零副作用。
+    """
+    marker = os.path.join(os.path.dirname(os.path.abspath(__file__)), "STANDBY_DRILL")
+    if not os.path.exists(marker):
+        return False
+    try:
+        with open(marker, encoding="utf-8") as fh:
+            deadline = float(fh.read().strip() or 0)
+    except Exception:  # noqa: BLE001
+        return False
+    now = time.time()
+    if now > deadline:
+        print(
+            f"[standby] 演练标记已于 {datetime.fromtimestamp(deadline, timezone.utc):%Y-%m-%dT%H:%M:%SZ}"
+            f" 失效（当前 {datetime.now(timezone.utc):%Y-%m-%dT%H:%M:%SZ}）—— 不演练"
+        )
+        return False
+    print(f"[standby] 演练标记有效，剩余 {int(deadline - now)}s")
+    return True
+
+
+DRILL = _drill_requested()
+
+# 演练开关：跑完抓取、聚合与校验，但不写 KV（生产环境安全验证全链路）
+DRY_RUN = DRILL or os.getenv("STANDBY_DRY_RUN", "") == "1"
 
 # relay 触发路径
 WORKFLOW_REPO = os.getenv("STANDBY_REPO", "LvKeHua/tokenomics-screener")
@@ -667,11 +703,18 @@ def run_standby() -> bool:
     绝不抛异常——调用方（collect.yml 的数据采集主流程）不应受任何影响。
     """
     try:
-        if DRY_RUN:
-            print("[standby] DRY_RUN=1 —— 演练模式（全链路执行，不写 KV）")
-        if not should_take_over():
+        if DRILL or DRY_RUN:
+            print(
+                f"[standby] 演练模式 (DRILL={DRILL} DRY_RUN={DRY_RUN}) —— "
+                f"全链路执行，不写 KV"
+            )
+        # 演练强制走接管分支（生产健康时也要验证接管链路本身）
+        if not DRILL and not should_take_over():
             return True
-        print("[standby] 筛币器数据过期 —— 外部待机接管")
+        if DRILL:
+            print("[standby] 演练：跳过健康检查，直接走接管分支")
+        else:
+            print("[standby] 筛币器数据过期 —— 外部待机接管")
 
         # ① 首选：触发真 relay（relay.mjs 全量，含 forward_data / oi_stage）
         if not DRY_RUN and dispatch_full_relay() == 0:
