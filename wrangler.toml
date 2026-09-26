@@ -1,6 +1,21 @@
+# ⚠️ 仓库根配置。生产 worker 的正本配置在 01_筹码筛选/cf-worker/wrangler.toml，
+# 正本部署命令：
+#   cd 01_筹码筛选/cf-worker && npx wrangler deploy worker_v10_inline.mjs --name tokenomics-screener
+#
+# 2026-09-26 修正两处会导致生产事故的错配（原值见 git 历史）：
+#   1) main 原为 "src/worker.js" —— 那是 v6 老版本（ES Module、23KB），
+#      而线上跑的是 worker_v10_inline.mjs（service-worker、249KB）。
+#      两者路由集不相交：v6 完全没有 relay-tickers / relay-coinfilter /
+#      relay-forward / day-gainers / overlap-stats / fwd_hist。
+#      .github/workflows/deploy.yml 一旦执行成功，会把线上正式版覆盖成 v6，
+#      整条数据管道立即停摆。（目前未触发纯属两道偶然保险：该 workflow 只认
+#      push 到 main 而本仓库主分支是 master；上次手动运行卡在缺密钥。）
+#   2) crons 原为 "*/5 * * * *" —— 线上实际每小时（见正本配置）。
+#      按 */5 部署会让 refreshData 触发频次变 12 倍，每次写 4 个 KV key，
+#      直接冲爆 KV 免费版 1000 writes/day 配额。
 name = "tokenomics-screener"
-main = "src/worker.js"
-compatibility_date = "2026-07-22"
+main = "01_筹码筛选/cf-worker/worker_v10_inline.mjs"
+compatibility_date = "2024-01-01"
 
 workers_dev = true
 
@@ -13,7 +28,7 @@ routes = [
 ]
 
 [triggers]
-crons = ["*/5 * * * *"]
+crons = ["0 * * * *"]
 
 # Secrets (set via `wrangler secret put`):
 #   CMC_API_KEY      - CoinMarketCap Pro API 密钥
