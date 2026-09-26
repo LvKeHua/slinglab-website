@@ -1,3 +1,19 @@
+// ⚠️ 废弃文件 —— 请勿部署。
+//
+// 这是筹码筛选 Worker 的 v6 版本（ES Module），已被
+// 01_筹码筛选/cf-worker/worker_v10_inline.mjs（service-worker）取代。
+// 保留仅供历史查阅；生产在跑 v10。
+//
+// 为什么不能部署它：v6 缺少线上依赖的接口 ——
+//   relay-tickers / relay-coinfilter / relay-forward /
+//   day-gainers / overlap-stats / fwd_hist / gainer-backfill
+// 部署后 relay 推不进来、涨幅榜与候选池归档全部失效。
+//
+// 生产部署命令（正本配置在 01_筹码筛选/cf-worker/wrangler.toml）：
+//   cd 01_筹码筛选/cf-worker && npx wrangler deploy worker_v10_inline.mjs --name tokenomics-screener
+//
+// 2026-09-26：仓库根 wrangler.toml 曾把 main 指向本文件（已修正）。
+// ── 以下为 v6 原始内容，未作任何改动 ──────────────────────
 // 筹码筛选 Worker (ES Module) v6 — 双源交叉验证 (8-page CG)
 // API 密钥通过 Cloudflare Secrets 注入环境变量, 无硬编码值
 // 部署前需设置: wrangler secret put CMC_API_KEY
