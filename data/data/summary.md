@@ -1,10 +1,10 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-09-30 19:03:27 UTC
-**Coins tracked**: 516
-**With circulating ratio**: 313 (60.7%)
-**Average ratio**: 67.4%
-**Data conflicts**: 15 (2.9%)
+**Run at**: 2026-09-30 22:57:06 UTC
+**Coins tracked**: 515
+**With circulating ratio**: 313 (60.8%)
+**Average ratio**: 67.5%
+**Data conflicts**: 16 (3.1%)
 **Stale CG data**: 5 (1.0%)
 
 ### Top 10 Conflicts (largest CMC vs CG discrepancy)
