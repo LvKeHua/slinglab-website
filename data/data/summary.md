@@ -1,10 +1,10 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-10-03 06:18:35 UTC
-**Coins tracked**: 517
-**With circulating ratio**: 312 (60.3%)
+**Run at**: 2026-10-03 12:24:10 UTC
+**Coins tracked**: 518
+**With circulating ratio**: 313 (60.4%)
 **Average ratio**: 67.1%
-**Data conflicts**: 16 (3.1%)
+**Data conflicts**: 15 (2.9%)
 **Stale CG data**: 4 (0.8%)
 
 ### Top 10 Conflicts (largest CMC vs CG discrepancy)
@@ -17,7 +17,7 @@
 | NEXO | 64.61% | 100.0% | 35.39% |
 | DEEP | 58.83% | 25.0% | 33.83% |
 | BNB | 100.0% | 66.58% | 33.42% |
-| PONS | 100.0% | 68.14% | 31.86% |
+| PONS | 100.0% | 68.12% | 31.88% |
 | CARDS | 20.75% | 44.73% | 23.98% |
 | QNT | 81.13% | 99.53% | 18.4% |
 | HUMA | 35.44% | 17.33% | 18.11% |
