@@ -1,10 +1,10 @@
 {
-  "run_at": "2026-10-15T09:43:39.783281+00:00",
-  "total_coins": 519,
-  "coins_with_cmc_and_cg": 275,
+  "run_at": "2026-10-15T14:48:54.555025+00:00",
+  "total_coins": 520,
+  "coins_with_cmc_and_cg": 274,
   "coins_with_conflict": 17,
   "coins_stale_cg": 4,
-  "coins_no_ratio": 213,
+  "coins_no_ratio": 211,
   "conflict_breakdown": {
     "33%": 1,
     "14%": 1,
@@ -21,5 +21,5 @@
     "34%": 1,
     "24%": 1
   },
-  "quality_score": 29.0
+  "quality_score": 28.8
 }
