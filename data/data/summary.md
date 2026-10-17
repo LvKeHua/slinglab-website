@@ -1,9 +1,9 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-10-16 23:25:06 UTC
-**Coins tracked**: 521
-**With circulating ratio**: 310 (59.5%)
-**Average ratio**: 67.3%
+**Run at**: 2026-10-17 04:02:37 UTC
+**Coins tracked**: 520
+**With circulating ratio**: 308 (59.2%)
+**Average ratio**: 67.1%
 **Data conflicts**: 17 (3.3%)
 **Stale CG data**: 4 (0.8%)
 
@@ -18,6 +18,6 @@
 | NEXO | 64.61% | 100.0% | 35.39% |
 | DEEP | 58.83% | 25.0% | 33.83% |
 | BNB | 100.0% | 66.58% | 33.42% |
-| PONS | 100.0% | 67.51% | 32.49% |
+| PONS | 100.0% | 67.5% | 32.5% |
 | CARDS | 20.75% | 45.13% | 24.38% |
 | QNT | 81.13% | 99.61% | 18.48% |
