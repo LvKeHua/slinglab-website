@@ -1,0 +1,24 @@
+{
+  "run_at": "2026-10-21T19:12:01.981663+00:00",
+  "total_coins": 522,
+  "coins_with_cmc_and_cg": 272,
+  "coins_with_conflict": 17,
+  "coins_stale_cg": 4,
+  "coins_no_ratio": 208,
+  "conflict_breakdown": {
+    "34%": 2,
+    "14%": 1,
+    "18%": 2,
+    "77%": 1,
+    "41%": 1,
+    "17%": 3,
+    "15%": 1,
+    "35%": 1,
+    "55%": 1,
+    "47%": 1,
+    "11%": 1,
+    "33%": 1,
+    "24%": 1
+  },
+  "quality_score": 28.5
+}
