@@ -1,9 +1,9 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-10-24 00:26:15 UTC
-**Coins tracked**: 524
-**With circulating ratio**: 310 (59.2%)
-**Average ratio**: 66.7%
+**Run at**: 2026-10-24 05:37:25 UTC
+**Coins tracked**: 525
+**With circulating ratio**: 313 (59.6%)
+**Average ratio**: 66.5%
 **Data conflicts**: 15 (2.9%)
 **Stale CG data**: 2 (0.4%)
 
@@ -20,4 +20,4 @@
 | PONS | 100.0% | 67.27% | 32.73% |
 | CARDS | 20.75% | 44.29% | 23.54% |
 | QNT | 81.13% | 99.61% | 18.48% |
-| DRV | 49.17% | 66.64% | 17.47% |
+| 2Z | 34.71% | 52.2% | 17.49% |
