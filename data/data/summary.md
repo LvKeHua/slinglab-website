@@ -1,9 +1,9 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-10-28 18:45:48 UTC
-**Coins tracked**: 525
-**With circulating ratio**: 310 (59.0%)
-**Average ratio**: 65.8%
+**Run at**: 2026-10-28 23:04:43 UTC
+**Coins tracked**: 524
+**With circulating ratio**: 311 (59.4%)
+**Average ratio**: 65.9%
 **Data conflicts**: 17 (3.2%)
 **Stale CG data**: 3 (0.6%)
 
@@ -11,7 +11,7 @@
 
 | Symbol | CMC Ratio | CG Ratio | Diff |
 |--------|-----------|----------|------|
-| M | 22.91% | 100.0% | 77.09% |
+| M | 22.92% | 100.0% | 77.08% |
 | IMX | 100.0% | 45.22% | 54.78% |
 | FLOKI | 95.24% | 48.21% | 47.03% |
 | BGB | 76.09% | 35.0% | 41.09% |
