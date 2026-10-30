@@ -1,9 +1,9 @@
 ## Token Data Collection Report
 
-**Run at**: 2026-10-30 01:47:45 UTC
-**Coins tracked**: 525
-**With circulating ratio**: 308 (58.7%)
-**Average ratio**: 65.6%
+**Run at**: 2026-10-30 08:26:59 UTC
+**Coins tracked**: 524
+**With circulating ratio**: 310 (59.2%)
+**Average ratio**: 66.1%
 **Data conflicts**: 18 (3.4%)
 **Stale CG data**: 3 (0.6%)
 
@@ -19,5 +19,5 @@
 | BNB | 100.0% | 65.76% | 34.24% |
 | PONS | 100.0% | 67.17% | 32.83% |
 | GEOD | 47.16% | 74.53% | 27.37% |
-| CARDS | 20.75% | 44.29% | 23.54% |
+| CARDS | 20.75% | 44.26% | 23.51% |
 | DRV | 49.17% | 70.81% | 21.64% |
